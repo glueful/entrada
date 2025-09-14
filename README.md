@@ -48,6 +48,61 @@ php glueful extensions:info Entrada
 php glueful extensions:why Glueful\\Extensions\\Entrada\\Services\\EntradaServiceProvider
 ```
 
+### Local Development Installation
+
+If you're working locally (without Composer), place the extension in `extensions/Entrada`, ensure `config/extensions.php` has `local_path` pointing to `extensions` (non‑prod).
+
+Enable the provider for development (choose one):
+
+- CLI (recommended):
+  ```bash
+  php glueful extensions:enable Entrada
+  ```
+
+- Manual `config/extensions.php` edit:
+  ```php
+  return [
+      'enabled' => [
+          // ... other providers
+          Glueful\\Extensions\\Entrada\\Services\\EntradaServiceProvider::class,
+      ],
+      'dev_only' => [
+          // Optionally keep Entrada dev-only
+      ],
+      'local_path' => env('APP_ENV') === 'production' ? null : 'extensions',
+      'scan_composer' => true,
+  ];
+  ```
+
+Run the migrations to create the necessary database tables:
+```bash
+php glueful migrate run
+```
+
+Generate API documentation (optional, if your tooling supports it):
+```bash
+php glueful generate:json doc
+```
+
+Restart your web server to apply the changes.
+
+### Verify Installation
+
+Check status and details:
+
+```bash
+php glueful extensions:list
+php glueful extensions:info Entrada
+php glueful extensions:why Glueful\\Extensions\\Entrada\\Services\\EntradaServiceProvider
+```
+
+Post-install checklist:
+
+- Run migrations (if not auto-run): `php glueful migrate run`
+- Hit an endpoint to verify: `GET /auth/social/google` (should redirect to Google OAuth)
+- Rebuild cache after Composer operations: `php glueful extensions:cache`
+- Check logs for initialization messages or errors
+
 ## Configuration
 
 ### Provider Credentials Setup
