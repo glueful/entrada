@@ -8,7 +8,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Glueful\Extensions\Entrada\Providers\AbstractSocialProvider;
 use Glueful\Auth\JWTService;
-use Glueful\Extensions\SocialLogin\Providers\ASN1Parser;
+use Glueful\Extensions\Entrada\Providers\ASN1Parser;
 use Glueful\Http\Client;
 use Glueful\Exceptions\HttpException;
 /**
@@ -16,7 +16,7 @@ use Glueful\Exceptions\HttpException;
  *
  * Handles Apple OAuth authentication flow and user management.
  *
- * @package Glueful\Extensions\SocialLogin\Providers
+ * @package Glueful\Extensions\Entrada\Providers
  */
 class AppleAuthProvider extends AbstractSocialProvider
 {
@@ -69,7 +69,7 @@ class AppleAuthProvider extends AbstractSocialProvider
     private function loadConfig(): void
     {
         // Get config from extension settings or environment
-        $config = \Glueful\Extensions\SocialLogin::getConfig();
+        $config = config('sauth', []);
 
         // Make sure the config has the expected structure
         if (!is_array($config) || !isset($config['apple']) || !is_array($config['apple'])) {

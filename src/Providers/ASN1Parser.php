@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Glueful\Extensions\SocialLogin\Providers;
+namespace Glueful\Extensions\Entrada\Providers;
 
 /**
  * ASN1 Parser for DER encoded signatures

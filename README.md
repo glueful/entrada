@@ -773,7 +773,7 @@ The extension includes advanced Apple Sign In support:
 Validates Apple's JWT signatures using a custom ASN.1 parser:
 
 ```php
-use Glueful\Extensions\SocialLogin\Providers\ASN1Parser;
+use Glueful\Extensions\Entrada\Providers\ASN1Parser;
 
 // Automatic JWT validation with Apple's public keys
 $parser = new ASN1Parser();
@@ -888,12 +888,9 @@ $tokens = $this->tokenManager->generateTokenPair($userUuid, [
 Monitor extension health:
 
 ```php
-use Glueful\Extensions\SocialLogin\SocialLogin;
-
-$extension = container()->get(SocialLogin::class);
-$health = $extension->getHealth();
-
-// Returns configuration status, provider availability, etc.
+// Resolve a provider and check basic availability
+$google = container()->get(Glueful\Extensions\Entrada\Providers\GoogleAuthProvider::class);
+// e.g., dump config/redirect URI or perform a light request
 ```
 
 ### Common Issues
@@ -957,7 +954,7 @@ if ($existingUser) {
 Extend the system with custom providers:
 
 ```php
-use Glueful\Extensions\SocialLogin\Providers\AbstractSocialProvider;
+use Glueful\Extensions\Entrada\Providers\AbstractSocialProvider;
 
 class CustomProvider extends AbstractSocialProvider
 {
