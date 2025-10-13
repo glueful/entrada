@@ -9,7 +9,14 @@
             "email": "michael@glueful.dev"
         }
     ],
-    "keywords": ["authentication", "social-integration", "oauth", "facebook", "google", "github"],
+    "keywords": [
+        "authentication",
+        "social-integration",
+        "oauth",
+        "facebook",
+        "google",
+        "github"
+    ],
     "require": {
         "php": "^8.2",
         "vlucas/phpdotenv": "^5.6"
@@ -29,8 +36,7 @@
     "homepage": "https://github.com/glueful/extensions/tree/main/extensions/Entrada",
     "autoload": {
         "psr-4": {
-            "Glueful\\Extensions\\Entrada\\": "src/",
-            "Glueful\\Extensions\\SocialLogin\\": "src/"
+            "Glueful\\Extensions\\Entrada\\": "src/"
         }
     },
     "autoload-dev": {
@@ -57,7 +63,11 @@
                 "color": "#2563EB",
                 "theme": "dark"
             },
-            "categories": ["authentication", "sso", "oauth"],
+            "categories": [
+                "authentication",
+                "sso",
+                "oauth"
+            ],
             "publisher": "glueful-team",
             "provider": "Glueful\\Extensions\\Entrada\\Services\\EntradaServiceProvider",
             "requires": {

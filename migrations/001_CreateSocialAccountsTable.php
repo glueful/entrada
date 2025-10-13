@@ -22,7 +22,7 @@ use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
  * - Stores provider-specific authentication data
  * - Supports multiple social accounts per user
  *
- * @package Glueful\Extensions\SocialLogin\Migrations
+ * @package Glueful\Extensions\Entrada\Migrations
  */
 class CreateSocialAccountsTable implements MigrationInterface
 {

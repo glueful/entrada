@@ -16,7 +16,7 @@ use Glueful\Helpers\Utils;
  *
  * Handles GitHub OAuth authentication flow and user management.
  *
- * @package Glueful\Extensions\SocialLogin\Providers
+ * @package Glueful\Extensions\Entrada\Providers
  */
 class GithubAuthProvider extends AbstractSocialProvider
 {
@@ -60,7 +60,7 @@ class GithubAuthProvider extends AbstractSocialProvider
     private function loadConfig(): void
     {
         // Get config from extension settings or environment
-        $config = \Glueful\Extensions\SocialLogin::getConfig();
+        $config = config('sauth', []);
 
         // Make sure the config has the expected structure
         if (!is_array($config) || !isset($config['github']) || !is_array($config['github'])) {
