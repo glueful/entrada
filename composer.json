@@ -57,7 +57,7 @@
             "name": "Entrada",
             "displayName": "Entrada",
             "description": "Social Login & SSO for Glueful (OAuth/OIDC)",
-            "version": "1.0.0",
+            "version": "1.0.1",
             "icon": "assets/icon.png",
             "galleryBanner": {
                 "color": "#2563EB",
@@ -71,7 +71,7 @@
             "publisher": "glueful-team",
             "provider": "Glueful\\Extensions\\Entrada\\Services\\EntradaServiceProvider",
             "requires": {
-                "glueful": ">=1.0.0",
+                "glueful": ">=1.5.0",
                 "extensions": []
             }
         }
