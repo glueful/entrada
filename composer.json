@@ -33,7 +33,7 @@
             "url": "${GLUEFUL_PATH}"
         }
     ],
-    "homepage": "https://github.com/glueful/extensions/tree/main/extensions/Entrada",
+    "homepage": "https://github.com/glueful/entrada",
     "autoload": {
         "psr-4": {
             "Glueful\\Extensions\\Entrada\\": "src/"
@@ -71,7 +71,7 @@
             "publisher": "glueful-team",
             "provider": "Glueful\\Extensions\\Entrada\\Services\\EntradaServiceProvider",
             "requires": {
-                "glueful": ">=1.5.0",
+                "glueful": ">=1.6.2",
                 "extensions": []
             }
         }
