@@ -63,6 +63,17 @@ class EntradaServiceProvider extends ServiceProvider
         // Load routes and migrations
         $this->loadRoutesFrom(__DIR__ . '/../routes.php');
         $this->loadMigrationsFrom(dirname(__DIR__, 2) . '/migrations');
+
+        // Register extension metadata for CLI and diagnostics
+        try {
+            $this->app->get(\Glueful\Extensions\ExtensionManager::class)->registerMeta(self::class, [
+                'slug' => 'entrada',
+                'name' => 'Entrada',
+                'version' => '1.0.2',
+                'description' => 'Social Login & SSO for Glueful (OAuth/OIDC)',
+            ]);
+        } catch (\Throwable $e) {
+            error_log('[Entrada] Failed to register extension metadata: ' . $e->getMessage());
+        }
     }
 }
-
