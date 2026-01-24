@@ -10,6 +10,7 @@ use Glueful\Repository\UserRepository;
 use Glueful\Auth\TokenManager;
 use Glueful\Auth\JWTService;
 use Glueful\Helpers\Utils;
+use Glueful\Database\Connection;
 
 /**
  * Abstract Social Authentication Provider
@@ -23,10 +24,12 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
     protected string $providerName;
     protected ?string $lastError = null;
     protected UserRepository $userRepository;
+    protected Connection $db;
 
     public function __construct()
     {
         $this->userRepository = new UserRepository();
+        $this->db = container()->get('database');
     }
 
     public function authenticate(Request $request): ?array
@@ -132,8 +135,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
 
     protected function findUserBySocialId(string $provider, string $socialId): ?array
     {
-        $db = new \Glueful\Database\Connection();
-        $result = $db->table('social_accounts')
+        $result = $this->db->table('social_accounts')
             ->select(['user_uuid'])
             ->where('provider', $provider)
             ->where('social_id', $socialId)
@@ -153,9 +155,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
         string $socialId,
         array $userData
     ): bool {
-        $db = new \Glueful\Database\Connection();
-
-        $existing = $db->table('social_accounts')
+        $existing = $this->db->table('social_accounts')
             ->select(['*'])
             ->where('user_uuid', $userUuid)
             ->where('provider', $provider)
@@ -164,7 +164,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
             ->get();
 
         if (!empty($existing)) {
-            return $db->table('social_accounts')
+            return $this->db->table('social_accounts')
                 ->where('uuid', $existing[0]['uuid'])
                 ->update([
                     'profile_data' => json_encode($userData),
@@ -172,7 +172,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
                 ]) > 0;
         }
 
-        $result = $db->table('social_accounts')->insert([
+        $result = $this->db->table('social_accounts')->insert([
             'uuid' => Utils::generateNanoID(),
             'user_uuid' => $userUuid,
             'provider' => $provider,

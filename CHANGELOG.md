@@ -14,6 +14,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.1.1] - 2026-01-24
+
+### Changed
+- **AbstractSocialProvider**: Improved database connection handling.
+  - Database connection now injected via DI container in constructor.
+  - Reuses single connection instance instead of creating new connections per method call.
+  - Added `Connection` class property for better performance and testability.
+- **Routes**: Updated database queries to use fluent query builder pattern.
+  - Simplified database access using `container()->get('database')`.
+  - Migrated from static QueryBuilder methods to fluent `$db->table()->select()->where()->get()` pattern.
+  - Delete operations now use fluent builder for consistency.
+
+### Performance
+- Reduced database connection overhead by reusing connection instance in social providers.
+- Consistent query builder usage improves query optimization.
+
+### Notes
+- No breaking changes. All endpoints maintain the same behavior.
+- Compatible with Glueful Framework 1.19.x.
+
 ## [1.1.0] - 2026-01-17
 
 ### Breaking Changes

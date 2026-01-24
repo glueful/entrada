@@ -541,17 +541,11 @@ $router->group(['prefix' => '/user/social-accounts', 'middleware' => ['auth']], 
 
             $userUuid = $userData['uuid'];
 
-            // Get database components from DI container
-    
-            $connection = container()->get(\Glueful\Database\Connection::class);
-            $db = container()->get(\Glueful\Database\QueryBuilder::class);
+            // Get database connection from DI container
+            $db = container()->get('database');
 
-            $accounts = $db->select('social_accounts', [
-                    'uuid',
-                    'provider',
-                    'created_at',
-                    'updated_at'
-                ])
+            $accounts = $db->table('social_accounts')
+                ->select(['uuid', 'provider', 'created_at', 'updated_at'])
                 ->where(['user_uuid' => $userUuid])
                 ->get();
 
@@ -585,12 +579,10 @@ $router->group(['prefix' => '/user/social-accounts', 'middleware' => ['auth']], 
 
             $userUuid = $userData['uuid'];
 
-            // Get database components from DI container
-    
-            $connection = container()->get(\Glueful\Database\Connection::class);
-            $db = container()->get(\Glueful\Database\QueryBuilder::class);
+            // Get database connection from DI container
+            $db = container()->get('database');
 
-            $account = $db->select('social_accounts')
+            $account = $db->table('social_accounts')
                 ->where([
                     'uuid' => $uuid,
                     'user_uuid' => $userUuid
@@ -602,10 +594,12 @@ $router->group(['prefix' => '/user/social-accounts', 'middleware' => ['auth']], 
                 return Response::notFound('Social account not found or not owned by user');
             }
             // Delete the social account
-            $deleted = $db->delete('social_accounts', [
-                'uuid' => $uuid,
-                'user_uuid' => $userUuid
-            ]);
+            $deleted = $db->table('social_accounts')
+                ->where([
+                    'uuid' => $uuid,
+                    'user_uuid' => $userUuid
+                ])
+                ->delete();
 
             if (!$deleted) {
                 return Response::serverError('Failed to unlink social account');
