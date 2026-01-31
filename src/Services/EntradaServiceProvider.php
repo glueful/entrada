@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Extensions\Entrada\Services;
 
+use Glueful\Bootstrap\ApplicationContext;
 use Glueful\Extensions\ServiceProvider;
 use Glueful\Extensions\Entrada\Providers\GoogleAuthProvider;
 use Glueful\Extensions\Entrada\Providers\FacebookAuthProvider;
@@ -16,25 +17,25 @@ class EntradaServiceProvider extends ServiceProvider
     public static function services(): array
     {
         return [
-            GoogleAuthProvider::class => ['class' => GoogleAuthProvider::class, 'shared' => true],
-            FacebookAuthProvider::class => ['class' => FacebookAuthProvider::class, 'shared' => true],
-            GithubAuthProvider::class => ['class' => GithubAuthProvider::class, 'shared' => true],
-            AppleAuthProvider::class => ['class' => AppleAuthProvider::class, 'shared' => true],
+            GoogleAuthProvider::class => ['class' => GoogleAuthProvider::class, 'shared' => true, 'autowire' => true],
+            FacebookAuthProvider::class => ['class' => FacebookAuthProvider::class, 'shared' => true, 'autowire' => true],
+            GithubAuthProvider::class => ['class' => GithubAuthProvider::class, 'shared' => true, 'autowire' => true],
+            AppleAuthProvider::class => ['class' => AppleAuthProvider::class, 'shared' => true, 'autowire' => true],
         ];
     }
 
-    public function register(): void
+    public function register(ApplicationContext $context): void
     {
         // Merge default configuration under the 'sauth' key
         $this->mergeConfig('sauth', require __DIR__ . '/../../config/sauth.php');
     }
 
-    public function boot(): void
+    public function boot(ApplicationContext $context): void
     {
         // Register social auth providers with the core Auth manager
         try {
-            $authManager = AuthBootstrap::getManager();
-            $config = config('sauth', []);
+            $authManager = app($context, AuthBootstrap::class)->getManager();
+            $config = config($context, 'sauth', []);
             $enabled = $config['enabled_providers'] ?? ['google', 'facebook', 'github', 'apple'];
 
             $map = [
@@ -69,7 +70,7 @@ class EntradaServiceProvider extends ServiceProvider
             $this->app->get(\Glueful\Extensions\ExtensionManager::class)->registerMeta(self::class, [
                 'slug' => 'entrada',
                 'name' => 'Entrada',
-                'version' => '1.1.1',
+                'version' => '1.2.0',
                 'description' => 'Social Login & SSO for Glueful (OAuth/OIDC)',
             ]);
         } catch (\Throwable $e) {

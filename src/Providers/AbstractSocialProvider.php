@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Extensions\Entrada\Providers;
 
+use Glueful\Bootstrap\ApplicationContext;
 use Symfony\Component\HttpFoundation\Request;
 use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
 use Glueful\Repository\UserRepository;
@@ -25,11 +26,13 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
     protected ?string $lastError = null;
     protected UserRepository $userRepository;
     protected Connection $db;
+    protected ApplicationContext $context;
 
-    public function __construct()
+    public function __construct(ApplicationContext $context)
     {
-        $this->userRepository = new UserRepository();
-        $this->db = container()->get('database');
+        $this->context = $context;
+        $this->userRepository = new UserRepository(null, null, $context);
+        $this->db = $context->getContainer()->get('database');
     }
 
     public function authenticate(Request $request): ?array
@@ -68,7 +71,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
 
     public function validateToken(string $token): bool
     {
-        return TokenManager::validateAccessToken($token);
+        return $this->getTokenManager()->validateAccessToken($token);
     }
 
     public function canHandleToken(string $token): bool
@@ -86,14 +89,14 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
         ?int $refreshTokenLifetime = null
     ): array {
         $userData['provider'] = $this->providerName;
-        return TokenManager::generateTokenPair($userData, $accessTokenLifetime, $refreshTokenLifetime);
+        return $this->getTokenManager()->generateTokenPair($userData, $accessTokenLifetime, $refreshTokenLifetime);
     }
 
     public function refreshTokens(string $refreshToken, array $sessionData): ?array
     {
         $sessionData['provider'] = $this->providerName;
         try {
-            return TokenManager::refreshTokens($refreshToken, $this->providerName);
+            return $this->getTokenManager()->refreshTokens($refreshToken, $this->providerName);
         } catch (\Exception $e) {
             $this->lastError = "Token refresh error: " . $e->getMessage();
             return null;
@@ -124,7 +127,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
             }
         }
 
-        $config = config('sauth', []);
+        $config = config($this->context, 'sauth', []);
         if (!($config['auto_register'] ?? true)) {
             $this->lastError = "Auto-registration is disabled and no matching user found";
             return null;
@@ -217,5 +220,15 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
     abstract protected function isOAuthInitRequest(Request $request): bool;
     abstract protected function handleCallback(Request $request): ?array;
     abstract protected function initiateOAuthFlow(Request $request): void;
+
+    private function getTokenManager(): TokenManager
+    {
+        if ($this->context->hasContainer()) {
+            return $this->context->getContainer()->get(TokenManager::class);
+        }
+
+        return new TokenManager($this->context);
+    }
+
 }
 

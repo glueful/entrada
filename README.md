@@ -18,8 +18,8 @@ Entrada provides enterprise-grade OAuth/OIDC social authentication for the Gluef
 
 ## Requirements
 
-- PHP 8.2 or higher
-- Glueful Framework 0.29.0 or higher
+- PHP 8.3 or higher
+- Glueful Framework 1.22.0 or higher
 - cURL PHP extension
 - OpenSSL PHP extension (for Apple Sign In)
 
