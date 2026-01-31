@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Extensions\Entrada\Providers;
 
+use Glueful\Bootstrap\ApplicationContext;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Glueful\Extensions\Entrada\Providers\AbstractSocialProvider;
@@ -47,12 +48,12 @@ class AppleAuthProvider extends AbstractSocialProvider
     /**
      * Constructor
      */
-    public function __construct()
+    public function __construct(ApplicationContext $context)
     {
-        parent::__construct();
+        parent::__construct($context);
 
         // Initialize HTTP client
-        $this->httpClient =container()->get(Client::class);
+        $this->httpClient =$this->context->getContainer()->get(Client::class);
 
         // Set provider name
         $this->providerName = 'apple';
@@ -69,7 +70,7 @@ class AppleAuthProvider extends AbstractSocialProvider
     private function loadConfig(): void
     {
         // Get config from extension settings or environment
-        $config = config('sauth', []);
+        $config = config($this->context, 'sauth', []);
 
         // Make sure the config has the expected structure
         if (!is_array($config) || !isset($config['apple']) || !is_array($config['apple'])) {
@@ -107,7 +108,7 @@ class AppleAuthProvider extends AbstractSocialProvider
     private function getDefaultRedirectUri(): string
     {
         // Get base URL from config
-        $baseUrl = config('app.url', '');
+        $baseUrl = config($this->context, 'app.url', '');
 
         if (empty($baseUrl) && isset($_SERVER['HTTP_HOST'])) {
             $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ||

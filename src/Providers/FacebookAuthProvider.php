@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Glueful\Extensions\Entrada\Providers;
 
+use Glueful\Bootstrap\ApplicationContext;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Glueful\Extensions\Entrada\Providers\AbstractSocialProvider;
@@ -37,15 +38,15 @@ class FacebookAuthProvider extends AbstractSocialProvider
     /**
      * Constructor
      */
-    public function __construct()
+    public function __construct(ApplicationContext $context)
     {
-        parent::__construct();
+        parent::__construct($context);
 
         // Set provider name
         $this->providerName = 'facebook';
 
         // Initialize HTTP client
-        $this->httpClient = container()->get(Client::class);
+        $this->httpClient = $this->context->getContainer()->get(Client::class);
 
         // Load configuration
         $this->loadConfig();
@@ -59,7 +60,7 @@ class FacebookAuthProvider extends AbstractSocialProvider
     private function loadConfig(): void
     {
         // Get config from extension settings or environment
-        $config = config('sauth', []);
+        $config = config($this->context, 'sauth', []);
 
         // Make sure the config has the expected structure
         if (!is_array($config) || !isset($config['facebook']) || !is_array($config['facebook'])) {
@@ -89,7 +90,7 @@ class FacebookAuthProvider extends AbstractSocialProvider
     private function getDefaultRedirectUri(): string
     {
         // Get base URL from config
-        $baseUrl = config('app.url', '');
+        $baseUrl = config($this->context, 'app.url', '');
 
         if (empty($baseUrl) && isset($_SERVER['HTTP_HOST'])) {
             $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ||
@@ -353,8 +354,8 @@ class FacebookAuthProvider extends AbstractSocialProvider
                 $userData = $sessionData['user'];
 
                 // Generate new tokens using standard method from parent
-                $accessTokenLifetime = (int)config('session.access_token_lifetime', 3600);
-                $refreshTokenLifetime = (int)config('session.refresh_token_lifetime', 604800);
+                $accessTokenLifetime = (int)config($this->context, 'session.access_token_lifetime', 3600);
+                $refreshTokenLifetime = (int)config($this->context, 'session.refresh_token_lifetime', 604800);
 
                 return $this->generateTokens(
                     $userData,

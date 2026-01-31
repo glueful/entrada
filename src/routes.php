@@ -28,7 +28,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
     $router->get('/google', function (Request $request) {
         // Get the Google auth provider from DI container
 
-        $googleProvider = container()->get(\Glueful\Extensions\Entrada\Providers\GoogleAuthProvider::class);
+        $googleProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\GoogleAuthProvider::class);
 
         try {
             // The authenticate method handles web-based OAuth flow with redirects
@@ -73,7 +73,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
 
             // Get the Google provider from DI container
     
-            $googleProvider = container()->get(\Glueful\Extensions\Entrada\Providers\GoogleAuthProvider::class);
+            $googleProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\GoogleAuthProvider::class);
 
             // Verify the ID token
             $userData = $googleProvider->verifyNativeToken($idToken);
@@ -116,7 +116,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
         try {
             // Get the Google auth provider from DI container
     
-            $googleProvider = container()->get(\Glueful\Extensions\Entrada\Providers\GoogleAuthProvider::class);
+            $googleProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\GoogleAuthProvider::class);
 
             // Process the OAuth callback
             $userData = $googleProvider->authenticate($request);
@@ -150,7 +150,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
     $router->get('/facebook', function (Request $request) {
         // Get the Facebook auth provider from DI container
 
-        $facebookProvider = container()->get(\Glueful\Extensions\Entrada\Providers\FacebookAuthProvider::class);
+        $facebookProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\FacebookAuthProvider::class);
 
         try {
             // The authenticate method handles web-based OAuth flow with redirects
@@ -195,7 +195,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
 
             // Get the Facebook provider from DI container
     
-            $facebookProvider = container()->get(\Glueful\Extensions\Entrada\Providers\FacebookAuthProvider::class);
+            $facebookProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\FacebookAuthProvider::class);
 
             // Verify the access token
             $userData = $facebookProvider->verifyNativeToken($accessToken);
@@ -238,7 +238,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
         try {
             // Get the Facebook auth provider from DI container
     
-            $facebookProvider = container()->get(\Glueful\Extensions\Entrada\Providers\FacebookAuthProvider::class);
+            $facebookProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\FacebookAuthProvider::class);
 
             // Process the OAuth callback
             $userData = $facebookProvider->authenticate($request);
@@ -272,7 +272,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
     $router->get('/github', function (Request $request) {
         // Get the GitHub auth provider from DI container
 
-        $githubProvider = container()->get(\Glueful\Extensions\Entrada\Providers\GithubAuthProvider::class);
+        $githubProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\GithubAuthProvider::class);
 
         try {
             // The authenticate method handles web-based OAuth flow with redirects
@@ -317,7 +317,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
 
             // Get the GitHub provider from DI container
     
-            $githubProvider = container()->get(\Glueful\Extensions\Entrada\Providers\GithubAuthProvider::class);
+            $githubProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\GithubAuthProvider::class);
 
             // Verify the access token
             $userData = $githubProvider->verifyNativeToken($accessToken);
@@ -360,7 +360,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
         try {
             // Get the GitHub auth provider from DI container
     
-            $githubProvider = container()->get(\Glueful\Extensions\Entrada\Providers\GithubAuthProvider::class);
+            $githubProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\GithubAuthProvider::class);
 
             // Process the OAuth callback
             $userData = $githubProvider->authenticate($request);
@@ -394,7 +394,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
     $router->get('/apple', function (Request $request) {
         // Get the Apple auth provider from DI container
 
-        $appleProvider = container()->get(\Glueful\Extensions\Entrada\Providers\AppleAuthProvider::class);
+        $appleProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\AppleAuthProvider::class);
 
         try {
             // The authenticate method handles web-based OAuth flow with redirects
@@ -439,7 +439,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
 
             // Get the Apple provider from DI container
     
-            $appleProvider = container()->get(\Glueful\Extensions\Entrada\Providers\AppleAuthProvider::class);
+            $appleProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\AppleAuthProvider::class);
 
             // Verify the ID token
             $userData = $appleProvider->verifyNativeToken($idToken);
@@ -484,7 +484,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
         try {
             // Get the Apple auth provider from DI container
     
-            $appleProvider = container()->get(\Glueful\Extensions\Entrada\Providers\AppleAuthProvider::class);
+            $appleProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\AppleAuthProvider::class);
 
             // Process the OAuth callback
             $userData = $appleProvider->authenticate($request);
@@ -542,7 +542,7 @@ $router->group(['prefix' => '/user/social-accounts', 'middleware' => ['auth']], 
             $userUuid = $userData['uuid'];
 
             // Get database connection from DI container
-            $db = container()->get('database');
+            $db = container($router->getContext())->get('database');
 
             $accounts = $db->table('social_accounts')
                 ->select(['uuid', 'provider', 'created_at', 'updated_at'])
@@ -580,7 +580,7 @@ $router->group(['prefix' => '/user/social-accounts', 'middleware' => ['auth']], 
             $userUuid = $userData['uuid'];
 
             // Get database connection from DI container
-            $db = container()->get('database');
+            $db = container($router->getContext())->get('database');
 
             $account = $db->table('social_accounts')
                 ->where([
