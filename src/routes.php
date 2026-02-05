@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use Glueful\Routing\Router;
-use Symfony\Component\HttpFoundation\Request;
-use Glueful\Http\Response;
+use Glueful\Extensions\Entrada\Controllers\SocialAuthController;
+use Glueful\Extensions\Entrada\Controllers\SocialAccountController;
 
 /** @var Router $router Router instance injected by RouteManifest::load() */
 /*
@@ -25,23 +25,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @tag Social Authentication
      * @response 302 "Redirects to Google's OAuth authorization page"
      */
-    $router->get('/google', function (Request $request) {
-        // Get the Google auth provider from DI container
-
-        $googleProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\GoogleAuthProvider::class);
-
-        try {
-            // The authenticate method handles web-based OAuth flow with redirects
-            $result = $googleProvider->authenticate($request);
-
-            // If we reach this point, something went wrong as we should have been redirected
-            $error = $googleProvider->getError() ?: "Failed to initiate Google authentication";
-            return Response::serverError($error);
-        } catch (\Exception $e) {
-            error_log("Google authentication error: " . $e->getMessage());
-            return Response::serverError("Failed to initialize Google authentication: " . $e->getMessage());
-        }
-    });
+    $router->get('/google', [SocialAuthController::class, 'googleInit']);
 
     /**
      * @route POST /auth/social/google
@@ -61,41 +45,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @response 401 "Failed to verify Google ID token"
      * @response 500 "Server error during authentication"
      */
-    $router->post('/google', function (Request $request) {
-        try {
-            // Get the ID token from the request
-            $requestData = json_decode($request->getContent(), true);
-            $idToken = $requestData['id_token'] ?? null;
-
-            if (empty($idToken)) {
-                return Response::validation(['id_token' => ['ID token is required']], 'Validation failed');
-            }
-
-            // Get the Google provider from DI container
-    
-            $googleProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\GoogleAuthProvider::class);
-
-            // Verify the ID token
-            $userData = $googleProvider->verifyNativeToken($idToken);
-
-            if (!$userData) {
-                $error = $googleProvider->getError() ?: 'Failed to verify Google ID token';
-                return Response::unauthorized($error);
-            }
-
-            // Generate authentication tokens
-            $tokens = $googleProvider->generateTokens($userData);
-
-            // Return tokens along with user data
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], 'Successfully authenticated with Google');
-        } catch (\Exception $e) {
-            error_log('Google token verification error: ' . $e->getMessage());
-            return Response::serverError('Failed to authenticate with Google: ' . $e->getMessage());
-        }
-    });
+    $router->post('/google', [SocialAuthController::class, 'googleNative']);
 
     /**
      * @route GET /auth/social/google/callback
@@ -107,38 +57,13 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @response 200 application/json "Successfully authenticated with Google" {
      *   access_token:string="JWT access token",
      *   refresh_token:string="JWT refresh token",
-     * expires_in:integer="Token expiration time in seconds",
-     * user:object="User profile information"}
+     *   expires_in:integer="Token expiration time in seconds",
+     *   user:object="User profile information"
+     * }
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
      */
-    $router->get('/google/callback', function (Request $request) {
-        try {
-            // Get the Google auth provider from DI container
-    
-            $googleProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\GoogleAuthProvider::class);
-
-            // Process the OAuth callback
-            $userData = $googleProvider->authenticate($request);
-
-            if (!$userData) {
-                $error = $googleProvider->getError() ?: "Failed to authenticate with Google";
-                return Response::unauthorized($error);
-            }
-
-            // Generate authentication tokens
-            $tokens = $googleProvider->generateTokens($userData);
-
-            // Return tokens along with user data
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], "Successfully authenticated with Google");
-        } catch (\Exception $e) {
-            error_log("Google callback error: " . $e->getMessage());
-            return Response::serverError("Failed to process Google authentication: " . $e->getMessage());
-        }
-    });
+    $router->get('/google/callback', [SocialAuthController::class, 'googleCallback']);
 
     /**
      * @route GET /auth/social/facebook
@@ -147,23 +72,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @tag Social Authentication
      * @response 302 "Redirects to Facebook's OAuth authorization page"
      */
-    $router->get('/facebook', function (Request $request) {
-        // Get the Facebook auth provider from DI container
-
-        $facebookProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\FacebookAuthProvider::class);
-
-        try {
-            // The authenticate method handles web-based OAuth flow with redirects
-            $result = $facebookProvider->authenticate($request);
-
-            // If we reach this point, something went wrong as we should have been redirected
-            $error = $facebookProvider->getError() ?: "Failed to initiate Facebook authentication";
-            return Response::serverError($error);
-        } catch (\Exception $e) {
-            error_log("Facebook authentication error: " . $e->getMessage());
-            return Response::serverError("Failed to initialize Facebook authentication: " . $e->getMessage());
-        }
-    });
+    $router->get('/facebook', [SocialAuthController::class, 'facebookInit']);
 
     /**
      * @route POST /auth/social/facebook
@@ -183,41 +92,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @response 401 "Failed to verify Facebook access token"
      * @response 500 "Server error during authentication"
      */
-    $router->post('/facebook', function (Request $request) {
-        try {
-            // Get the access token from the request
-            $requestData = json_decode($request->getContent(), true);
-            $accessToken = $requestData['access_token'] ?? null;
-
-            if (empty($accessToken)) {
-                return Response::validation(['access_token' => ['Access token is required']], 'Validation failed');
-            }
-
-            // Get the Facebook provider from DI container
-    
-            $facebookProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\FacebookAuthProvider::class);
-
-            // Verify the access token
-            $userData = $facebookProvider->verifyNativeToken($accessToken);
-
-            if (!$userData) {
-                $error = $facebookProvider->getError() ?: 'Failed to verify Facebook access token';
-                return Response::unauthorized($error);
-            }
-
-            // Generate authentication tokens
-            $tokens = $facebookProvider->generateTokens($userData);
-
-            // Return tokens along with user data
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], 'Successfully authenticated with Facebook');
-        } catch (\Exception $e) {
-            error_log('Facebook token verification error: ' . $e->getMessage());
-            return Response::serverError('Failed to authenticate with Facebook: ' . $e->getMessage());
-        }
-    });
+    $router->post('/facebook', [SocialAuthController::class, 'facebookNative']);
 
     /**
      * @route GET /auth/social/facebook/callback
@@ -230,37 +105,12 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      *   access_token:string="JWT access token",
      *   refresh_token:string="JWT refresh token",
      *   expires_in:integer="Token expiration time in seconds",
-     * user:object="User profile information"}
+     *   user:object="User profile information"
+     * }
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
      */
-    $router->get('/facebook/callback', function (Request $request) {
-        try {
-            // Get the Facebook auth provider from DI container
-    
-            $facebookProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\FacebookAuthProvider::class);
-
-            // Process the OAuth callback
-            $userData = $facebookProvider->authenticate($request);
-
-            if (!$userData) {
-                $error = $facebookProvider->getError() ?: "Failed to authenticate with Facebook";
-                return Response::unauthorized($error);
-            }
-
-            // Generate authentication tokens
-            $tokens = $facebookProvider->generateTokens($userData);
-
-            // Return tokens along with user data
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], "Successfully authenticated with Facebook");
-        } catch (\Exception $e) {
-            error_log("Facebook callback error: " . $e->getMessage());
-            return Response::serverError("Failed to process Facebook authentication: " . $e->getMessage());
-        }
-    });
+    $router->get('/facebook/callback', [SocialAuthController::class, 'facebookCallback']);
 
     /**
      * @route GET /auth/social/github
@@ -269,23 +119,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @tag Social Authentication
      * @response 302 "Redirects to GitHub's OAuth authorization page"
      */
-    $router->get('/github', function (Request $request) {
-        // Get the GitHub auth provider from DI container
-
-        $githubProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\GithubAuthProvider::class);
-
-        try {
-            // The authenticate method handles web-based OAuth flow with redirects
-            $result = $githubProvider->authenticate($request);
-
-            // If we reach this point, something went wrong as we should have been redirected
-            $error = $githubProvider->getError() ?: "Failed to initiate GitHub authentication";
-            return Response::serverError($error);
-        } catch (\Exception $e) {
-            error_log("GitHub authentication error: " . $e->getMessage());
-            return Response::serverError("Failed to initialize GitHub authentication: " . $e->getMessage());
-        }
-    });
+    $router->get('/github', [SocialAuthController::class, 'githubInit']);
 
     /**
      * @route POST /auth/social/github
@@ -305,41 +139,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @response 401 "Failed to verify GitHub access token"
      * @response 500 "Server error during authentication"
      */
-    $router->post('/github', function (Request $request) {
-        try {
-            // Get the access token from the request
-            $requestData = json_decode($request->getContent(), true);
-            $accessToken = $requestData['access_token'] ?? null;
-
-            if (empty($accessToken)) {
-                return Response::validation(['access_token' => ['Access token is required']], 'Validation failed');
-            }
-
-            // Get the GitHub provider from DI container
-    
-            $githubProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\GithubAuthProvider::class);
-
-            // Verify the access token
-            $userData = $githubProvider->verifyNativeToken($accessToken);
-
-            if (!$userData) {
-                $error = $githubProvider->getError() ?: 'Failed to verify GitHub access token';
-                return Response::unauthorized($error);
-            }
-
-            // Generate authentication tokens
-            $tokens = $githubProvider->generateTokens($userData);
-
-            // Return tokens along with user data
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], 'Successfully authenticated with GitHub');
-        } catch (\Exception $e) {
-            error_log('GitHub token verification error: ' . $e->getMessage());
-            return Response::serverError('Failed to authenticate with GitHub: ' . $e->getMessage());
-        }
-    });
+    $router->post('/github', [SocialAuthController::class, 'githubNative']);
 
     /**
      * @route GET /auth/social/github/callback
@@ -352,37 +152,12 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      *   access_token:string="JWT access token",
      *   refresh_token:string="JWT refresh token",
      *   expires_in:integer="Token expiration time in seconds",
-     *  user:object="User profile information"}
+     *   user:object="User profile information"
+     * }
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
      */
-    $router->get('/github/callback', function (Request $request) {
-        try {
-            // Get the GitHub auth provider from DI container
-    
-            $githubProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\GithubAuthProvider::class);
-
-            // Process the OAuth callback
-            $userData = $githubProvider->authenticate($request);
-
-            if (!$userData) {
-                $error = $githubProvider->getError() ?: "Failed to authenticate with GitHub";
-                return Response::unauthorized($error);
-            }
-
-            // Generate authentication tokens
-            $tokens = $githubProvider->generateTokens($userData);
-
-            // Return tokens along with user data
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], "Successfully authenticated with GitHub");
-        } catch (\Exception $e) {
-            error_log("GitHub callback error: " . $e->getMessage());
-            return Response::serverError("Failed to process GitHub authentication: " . $e->getMessage());
-        }
-    });
+    $router->get('/github/callback', [SocialAuthController::class, 'githubCallback']);
 
     /**
      * @route GET /auth/social/apple
@@ -391,23 +166,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @tag Social Authentication
      * @response 302 "Redirects to Apple's OAuth authorization page"
      */
-    $router->get('/apple', function (Request $request) {
-        // Get the Apple auth provider from DI container
-
-        $appleProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\AppleAuthProvider::class);
-
-        try {
-            // The authenticate method handles web-based OAuth flow with redirects
-            $result = $appleProvider->authenticate($request);
-
-            // If we reach this point, something went wrong as we should have been redirected
-            $error = $appleProvider->getError() ?: "Failed to initiate Apple authentication";
-            return Response::serverError($error);
-        } catch (\Exception $e) {
-            error_log("Apple authentication error: " . $e->getMessage());
-            return Response::serverError("Failed to initialize Apple authentication: " . $e->getMessage());
-        }
-    });
+    $router->get('/apple', [SocialAuthController::class, 'appleInit']);
 
     /**
      * @route POST /auth/social/apple
@@ -427,41 +186,7 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @response 401 "Failed to verify Apple ID token"
      * @response 500 "Server error during authentication"
      */
-    $router->post('/apple', function (Request $request) {
-        try {
-            // Get the ID token from the request
-            $requestData = json_decode($request->getContent(), true);
-            $idToken = $requestData['id_token'] ?? null;
-
-            if (empty($idToken)) {
-                return Response::validation(['id_token' => ['ID token is required']], 'Validation failed');
-            }
-
-            // Get the Apple provider from DI container
-    
-            $appleProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\AppleAuthProvider::class);
-
-            // Verify the ID token
-            $userData = $appleProvider->verifyNativeToken($idToken);
-
-            if (!$userData) {
-                $error = $appleProvider->getError() ?: 'Failed to verify Apple ID token';
-                return Response::unauthorized($error);
-            }
-
-            // Generate authentication tokens
-            $tokens = $appleProvider->generateTokens($userData);
-
-            // Return tokens along with user data
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], 'Successfully authenticated with Apple');
-        } catch (\Exception $e) {
-            error_log('Apple token verification error: ' . $e->getMessage());
-            return Response::serverError('Failed to authenticate with Apple: ' . $e->getMessage());
-        }
-    });
+    $router->post('/apple', [SocialAuthController::class, 'appleNative']);
 
     /**
      * @route POST /auth/social/apple/callback
@@ -476,39 +201,12 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      *   access_token:string="JWT access token",
      *   refresh_token:string="JWT refresh token",
      *   expires_in:integer="Token expiration time in seconds",
-     * user:object="User profile information"}
+     *   user:object="User profile information"
+     * }
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
      */
-    $router->post('/apple/callback', function (Request $request) {
-        try {
-            // Get the Apple auth provider from DI container
-    
-            $appleProvider = container($router->getContext())->get(\Glueful\Extensions\Entrada\Providers\AppleAuthProvider::class);
-
-            // Process the OAuth callback
-            $userData = $appleProvider->authenticate($request);
-
-            if (!$userData) {
-                $error = $appleProvider->getError() ?: "Failed to authenticate with Apple";
-                return Response::unauthorized($error);
-            }
-
-            // Generate authentication tokens
-            $tokens = $appleProvider->generateTokens($userData);
-
-            // Return tokens along with user data
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], "Successfully authenticated with Apple");
-        } catch (\Exception $e) {
-            error_log("Apple callback error: " . $e->getMessage());
-            return Response::serverError("Failed to process Apple authentication: " . $e->getMessage());
-        }
-    });
-
-    // Remove the /native group since we're using HTTP methods instead
+    $router->post('/apple/callback', [SocialAuthController::class, 'appleCallback']);
 });
 
 // User social accounts management (requires authentication)
@@ -526,34 +224,13 @@ $router->group(['prefix' => '/user/social-accounts', 'middleware' => ['auth']], 
      *     uuid:string="Unique identifier for the social account",
      *     provider:string="Social provider name (google, facebook, github, etc.)",
      *     created_at:string="When the account was connected",
-     * updated_at:string="When the account was last updated"}]}
+     *     updated_at:string="When the account was last updated"
+     *   }]
+     * }
      * @response 401 "Unauthorized - User is not authenticated"
      * @response 500 "Server error retrieving social accounts"
      */
-    $router->get('/', function (Request $request) {
-        try {
-            // Get authenticated user
-            $userData = $request->attributes->get('user');
-
-            if (!$userData || !isset($userData['uuid'])) {
-                return Response::unauthorized('Unauthorized');
-            }
-
-            $userUuid = $userData['uuid'];
-
-            // Get database connection from DI container
-            $db = container($router->getContext())->get('database');
-
-            $accounts = $db->table('social_accounts')
-                ->select(['uuid', 'provider', 'created_at', 'updated_at'])
-                ->where(['user_uuid' => $userUuid])
-                ->get();
-
-            return Response::success($accounts, 'Social accounts retrieved successfully');
-        } catch (\Exception $e) {
-            return Response::serverError('Failed to retrieve social accounts: ' . $e->getMessage());
-        }
-    });
+    $router->get('/', [SocialAccountController::class, 'index']);
 
     /**
      * @route DELETE /user/social-accounts/{uuid}
@@ -562,52 +239,14 @@ $router->group(['prefix' => '/user/social-accounts', 'middleware' => ['auth']], 
      * @tag Social Account Management
      * @requiresAuth true
      * @param uuid path string true "UUID of the social account to unlink"
-     * @response 200 application/json "Successfully unlinked social account" {status:string="success",
-     * message:string="Social account unlinked successfully"}
+     * @response 200 application/json "Successfully unlinked social account" {
+     *   status:string="success",
+     *   message:string="Social account unlinked successfully"
+     * }
      * @response 401 "Unauthorized - User is not authenticated"
      * @response 404 "Social account not found or not owned by user"
      * @response 500 "Server error unlinking social account"
      */
-    $router->delete('/{uuid}', function (Request $request, string $uuid) {
-        try {
-            // Get authenticated user
-            $userData = $request->attributes->get('user');
-
-            if (!$userData || !isset($userData['uuid'])) {
-                return Response::unauthorized('Unauthorized');
-            }
-
-            $userUuid = $userData['uuid'];
-
-            // Get database connection from DI container
-            $db = container($router->getContext())->get('database');
-
-            $account = $db->table('social_accounts')
-                ->where([
-                    'uuid' => $uuid,
-                    'user_uuid' => $userUuid
-                ])
-                ->limit(1)
-                ->get();
-
-            if (empty($account)) {
-                return Response::notFound('Social account not found or not owned by user');
-            }
-            // Delete the social account
-            $deleted = $db->table('social_accounts')
-                ->where([
-                    'uuid' => $uuid,
-                    'user_uuid' => $userUuid
-                ])
-                ->delete();
-
-            if (!$deleted) {
-                return Response::serverError('Failed to unlink social account');
-            }
-
-            return Response::success(null, 'Social account unlinked successfully');
-        } catch (\Exception $e) {
-            return Response::serverError('Failed to unlink social account: ' . $e->getMessage());
-        }
-    })->middleware(['auth', 'rate_limit:10,60']);
+    $router->delete('/{uuid}', [SocialAccountController::class, 'destroy'])
+        ->middleware(['auth', 'rate_limit:10,60']);
 });
