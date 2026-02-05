@@ -70,7 +70,7 @@ class EntradaServiceProvider extends ServiceProvider
             $this->app->get(\Glueful\Extensions\ExtensionManager::class)->registerMeta(self::class, [
                 'slug' => 'entrada',
                 'name' => 'Entrada',
-                'version' => '1.2.0',
+                'version' => '1.3.0',
                 'description' => 'Social Login & SSO for Glueful (OAuth/OIDC)',
             ]);
         } catch (\Throwable $e) {

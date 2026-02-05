@@ -14,6 +14,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.3.0] - 2026-02-05
+
+### Changed
+- **Framework Compatibility**: Updated minimum framework requirement to Glueful 1.28.0
+  - Compatible with route caching infrastructure (Bellatrix release)
+  - Routes converted from closures to `[Controller::class, 'method']` syntax for cache compatibility
+  - New dedicated controllers: `SocialAuthController`, `SocialAccountController`
+- **Route Refactoring**: All 14 OAuth routes now use controller syntax
+  - Social authentication flows (Google, Facebook, GitHub, Apple)
+  - Native app token exchange endpoints
+  - Social account management (list, unlink)
+- **composer.json**: Updated `extra.glueful.requires.glueful` to `>=1.28.0`
+
+### Added
+- **SocialAuthController**: Handles OAuth initialization, callbacks, and native token exchange
+  - `googleInit`, `googleCallback`, `googleNative` for Google OAuth
+  - `facebookInit`, `facebookCallback`, `facebookNative` for Facebook OAuth
+  - `githubInit`, `githubCallback` for GitHub OAuth
+  - `appleInit`, `appleCallback`, `appleNative` for Apple Sign-In
+- **SocialAccountController**: Manages linked social accounts
+  - `index` - List user's linked social accounts
+  - `destroy` - Unlink a social account
+
+### Notes
+- This release enables route caching for improved performance
+- All existing functionality remains unchanged
+- Run `composer update` after upgrading
+
 ## [1.2.0] - 2026-01-31
 
 ### Changed
