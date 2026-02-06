@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.3.1] - 2026-02-06
+
+### Changed
+- **Version Management**: Version is now read from `composer.json` at runtime via `EntradaServiceProvider::composerVersion()`.
+  - `registerMeta()` in `boot()` now uses `self::composerVersion()` instead of a hardcoded string.
+  - Future releases only require updating `composer.json` and `CHANGELOG.md`.
+
+### Notes
+- No breaking changes. Internal refactor only.
+
 ## [1.3.0] - 2026-02-05
 
 ### Changed
