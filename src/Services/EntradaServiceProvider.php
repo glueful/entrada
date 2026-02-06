@@ -14,6 +14,22 @@ use Glueful\Auth\AuthBootstrap;
 
 class EntradaServiceProvider extends ServiceProvider
 {
+    private static ?string $cachedVersion = null;
+
+    /**
+     * Read the extension version from composer.json (cached)
+     */
+    public static function composerVersion(): string
+    {
+        if (self::$cachedVersion === null) {
+            $path = __DIR__ . '/../../composer.json';
+            $composer = json_decode(file_get_contents($path), true);
+            self::$cachedVersion = $composer['version'] ?? '0.0.0';
+        }
+
+        return self::$cachedVersion;
+    }
+
     public static function services(): array
     {
         return [
@@ -70,7 +86,7 @@ class EntradaServiceProvider extends ServiceProvider
             $this->app->get(\Glueful\Extensions\ExtensionManager::class)->registerMeta(self::class, [
                 'slug' => 'entrada',
                 'name' => 'Entrada',
-                'version' => '1.3.0',
+                'version' => self::composerVersion(),
                 'description' => 'Social Login & SSO for Glueful (OAuth/OIDC)',
             ]);
         } catch (\Throwable $e) {
