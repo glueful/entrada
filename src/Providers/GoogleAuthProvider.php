@@ -9,7 +9,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Glueful\Extensions\Entrada\Providers\AbstractSocialProvider;
 use Glueful\Http\Client;
-use Glueful\Exceptions\HttpException;
+use Glueful\Http\Exceptions\HttpException;
 
 /**
  * Google Authentication Provider

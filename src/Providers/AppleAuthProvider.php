@@ -11,7 +11,7 @@ use Glueful\Extensions\Entrada\Providers\AbstractSocialProvider;
 use Glueful\Auth\JWTService;
 use Glueful\Extensions\Entrada\Providers\ASN1Parser;
 use Glueful\Http\Client;
-use Glueful\Exceptions\HttpException;
+use Glueful\Http\Exceptions\HttpException;
 /**
  * Apple Authentication Provider
  *
@@ -427,7 +427,7 @@ class AppleAuthProvider extends AbstractSocialProvider
         try {
             $reflection = new \ReflectionClass(JWTService::class);
             $method = $reflection->getMethod('base64UrlEncode');
-            $method->setAccessible(true);
+
             return $method->invoke(null, $data);
         } catch (\ReflectionException $e) {
             // Fallback implementation if reflection fails
@@ -459,7 +459,7 @@ class AppleAuthProvider extends AbstractSocialProvider
             try {
                 $reflection = new \ReflectionClass(JWTService::class);
                 $method = $reflection->getMethod('base64UrlDecode');
-                $method->setAccessible(true);
+    
                 $decodedPayload = $method->invoke(null, $tokenParts[1]);
             } catch (\ReflectionException $e) {
                 // Fallback implementation if reflection fails
@@ -578,7 +578,7 @@ class AppleAuthProvider extends AbstractSocialProvider
         try {
             $reflection = new \ReflectionClass(JWTService::class);
             $method = $reflection->getMethod('base64UrlDecode');
-            $method->setAccessible(true);
+
             $decodedHeader = $method->invoke(null, $tokenParts[0]);
         } catch (\ReflectionException $e) {
             // Fallback implementation if reflection fails
@@ -617,7 +617,7 @@ class AppleAuthProvider extends AbstractSocialProvider
             try {
                 $reflection = new \ReflectionClass(JWTService::class);
                 $method = $reflection->getMethod('base64UrlDecode');
-                $method->setAccessible(true);
+    
                 $decodedPayload = $method->invoke(null, $tokenParts[1]);
             } catch (\ReflectionException $e) {
                 // Fallback implementation
