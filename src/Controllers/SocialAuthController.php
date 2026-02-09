@@ -59,7 +59,7 @@ class SocialAuthController
             return Response::serverError($error);
         } catch (\Exception $e) {
             error_log("Google authentication error: " . $e->getMessage());
-            return Response::serverError("Failed to initialize Google authentication: " . $e->getMessage());
+            return Response::serverError("Failed to initialize Google authentication");
         }
     }
 
@@ -93,7 +93,7 @@ class SocialAuthController
             ], 'Successfully authenticated with Google');
         } catch (\Exception $e) {
             error_log('Google token verification error: ' . $e->getMessage());
-            return Response::serverError('Failed to authenticate with Google: ' . $e->getMessage());
+            return Response::serverError('Failed to authenticate with Google');
         }
     }
 
@@ -120,7 +120,7 @@ class SocialAuthController
             ], "Successfully authenticated with Google");
         } catch (\Exception $e) {
             error_log("Google callback error: " . $e->getMessage());
-            return Response::serverError("Failed to process Google authentication: " . $e->getMessage());
+            return Response::serverError("Failed to process Google authentication");
         }
     }
 
@@ -144,7 +144,7 @@ class SocialAuthController
             return Response::serverError($error);
         } catch (\Exception $e) {
             error_log("Facebook authentication error: " . $e->getMessage());
-            return Response::serverError("Failed to initialize Facebook authentication: " . $e->getMessage());
+            return Response::serverError("Failed to initialize Facebook authentication");
         }
     }
 
@@ -178,7 +178,7 @@ class SocialAuthController
             ], 'Successfully authenticated with Facebook');
         } catch (\Exception $e) {
             error_log('Facebook token verification error: ' . $e->getMessage());
-            return Response::serverError('Failed to authenticate with Facebook: ' . $e->getMessage());
+            return Response::serverError('Failed to authenticate with Facebook');
         }
     }
 
@@ -205,7 +205,7 @@ class SocialAuthController
             ], "Successfully authenticated with Facebook");
         } catch (\Exception $e) {
             error_log("Facebook callback error: " . $e->getMessage());
-            return Response::serverError("Failed to process Facebook authentication: " . $e->getMessage());
+            return Response::serverError("Failed to process Facebook authentication");
         }
     }
 
@@ -229,7 +229,7 @@ class SocialAuthController
             return Response::serverError($error);
         } catch (\Exception $e) {
             error_log("GitHub authentication error: " . $e->getMessage());
-            return Response::serverError("Failed to initialize GitHub authentication: " . $e->getMessage());
+            return Response::serverError("Failed to initialize GitHub authentication");
         }
     }
 
@@ -263,7 +263,7 @@ class SocialAuthController
             ], 'Successfully authenticated with GitHub');
         } catch (\Exception $e) {
             error_log('GitHub token verification error: ' . $e->getMessage());
-            return Response::serverError('Failed to authenticate with GitHub: ' . $e->getMessage());
+            return Response::serverError('Failed to authenticate with GitHub');
         }
     }
 
@@ -290,7 +290,7 @@ class SocialAuthController
             ], "Successfully authenticated with GitHub");
         } catch (\Exception $e) {
             error_log("GitHub callback error: " . $e->getMessage());
-            return Response::serverError("Failed to process GitHub authentication: " . $e->getMessage());
+            return Response::serverError("Failed to process GitHub authentication");
         }
     }
 
@@ -314,7 +314,7 @@ class SocialAuthController
             return Response::serverError($error);
         } catch (\Exception $e) {
             error_log("Apple authentication error: " . $e->getMessage());
-            return Response::serverError("Failed to initialize Apple authentication: " . $e->getMessage());
+            return Response::serverError("Failed to initialize Apple authentication");
         }
     }
 
@@ -348,7 +348,7 @@ class SocialAuthController
             ], 'Successfully authenticated with Apple');
         } catch (\Exception $e) {
             error_log('Apple token verification error: ' . $e->getMessage());
-            return Response::serverError('Failed to authenticate with Apple: ' . $e->getMessage());
+            return Response::serverError('Failed to authenticate with Apple');
         }
     }
 
@@ -375,7 +375,7 @@ class SocialAuthController
             ], "Successfully authenticated with Apple");
         } catch (\Exception $e) {
             error_log("Apple callback error: " . $e->getMessage());
-            return Response::serverError("Failed to process Apple authentication: " . $e->getMessage());
+            return Response::serverError("Failed to process Apple authentication");
         }
     }
 }
