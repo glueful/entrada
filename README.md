@@ -287,14 +287,15 @@ Recommended handler pattern:
 
 #### 3) Transaction behavior for social registration
 
-For new social users, Entrada runs the core creation sequence in a single DB transaction:
+For new social users, Entrada runs the core creation sequence in a DB transaction, then executes app provisioning after commit:
 
 1. Insert user
 2. Link social account
-3. Run post-registration handler (if enabled)
-4. Commit
+3. Commit
+4. Run post-registration handler (if enabled)
 
-If any step fails, the transaction is rolled back and signup fails with a generic API error.
+If step 1 or 2 fails, the transaction is rolled back and signup fails with a generic API error.
+If step 4 fails, signup fails with a generic API error, but committed core records remain.
 
 Note: profile synchronization remains best-effort and runs after core creation.
 
