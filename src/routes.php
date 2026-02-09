@@ -34,11 +34,21 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @tag Social Authentication
      * @requestBody id_token:string="ID token obtained from Google Sign-In SDK" {required=id_token}
      * @response 200 application/json "Successfully authenticated with Google" {
-     *   user:object="User profile information",
-     *   tokens:{
-     *     access_token:string="JWT access token",
-     *     refresh_token:string="JWT refresh token",
-     *     expires_in:integer="Token expiration time in seconds"
+     *   access_token:string="JWT access token",
+     *   token_type:string="Bearer",
+     *   expires_in:integer="Token expiration time in seconds",
+     *   refresh_token:string="Refresh token",
+     *   user:{
+     *     id:string="User UUID",
+     *     email:string="User email address",
+     *     email_verified:boolean="Whether the email has been verified",
+     *     username:string="Username",
+     *     name:string="Full display name",
+     *     given_name:string="First name",
+     *     family_name:string="Last name",
+     *     picture:string="Profile photo URL",
+     *     locale:string="User locale (default en-US)",
+     *     updated_at:integer="Last update Unix timestamp"
      *   }
      * }
      * @response 400 "Missing ID token"
@@ -56,9 +66,21 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @param state query string true "State token for CSRF protection"
      * @response 200 application/json "Successfully authenticated with Google" {
      *   access_token:string="JWT access token",
-     *   refresh_token:string="JWT refresh token",
+     *   token_type:string="Bearer",
      *   expires_in:integer="Token expiration time in seconds",
-     *   user:object="User profile information"
+     *   refresh_token:string="Refresh token",
+     *   user:{
+     *     id:string="User UUID",
+     *     email:string="User email address",
+     *     email_verified:boolean="Whether the email has been verified",
+     *     username:string="Username",
+     *     name:string="Full display name",
+     *     given_name:string="First name",
+     *     family_name:string="Last name",
+     *     picture:string="Profile photo URL",
+     *     locale:string="User locale (default en-US)",
+     *     updated_at:integer="Last update Unix timestamp"
+     *   }
      * }
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
@@ -81,11 +103,21 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @tag Social Authentication
      * @requestBody access_token:string="Access token obtained from Facebook Login SDK" {required=access_token}
      * @response 200 application/json "Successfully authenticated with Facebook" {
-     *   user:object="User profile information",
-     *   tokens:{
-     *     access_token:string="JWT access token",
-     *     refresh_token:string="JWT refresh token",
-     *     expires_in:integer="Token expiration time in seconds"
+     *   access_token:string="JWT access token",
+     *   token_type:string="Bearer",
+     *   expires_in:integer="Token expiration time in seconds",
+     *   refresh_token:string="Refresh token",
+     *   user:{
+     *     id:string="User UUID",
+     *     email:string="User email address",
+     *     email_verified:boolean="Whether the email has been verified",
+     *     username:string="Username",
+     *     name:string="Full display name",
+     *     given_name:string="First name",
+     *     family_name:string="Last name",
+     *     picture:string="Profile photo URL",
+     *     locale:string="User locale (default en-US)",
+     *     updated_at:integer="Last update Unix timestamp"
      *   }
      * }
      * @response 400 "Missing access token"
@@ -103,9 +135,21 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @param state query string true "State token for CSRF protection"
      * @response 200 application/json "Successfully authenticated with Facebook" {
      *   access_token:string="JWT access token",
-     *   refresh_token:string="JWT refresh token",
+     *   token_type:string="Bearer",
      *   expires_in:integer="Token expiration time in seconds",
-     *   user:object="User profile information"
+     *   refresh_token:string="Refresh token",
+     *   user:{
+     *     id:string="User UUID",
+     *     email:string="User email address",
+     *     email_verified:boolean="Whether the email has been verified",
+     *     username:string="Username",
+     *     name:string="Full display name",
+     *     given_name:string="First name",
+     *     family_name:string="Last name",
+     *     picture:string="Profile photo URL",
+     *     locale:string="User locale (default en-US)",
+     *     updated_at:integer="Last update Unix timestamp"
+     *   }
      * }
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
@@ -128,11 +172,21 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @tag Social Authentication
      * @requestBody access_token:string="Access token obtained from GitHub OAuth" {required=access_token}
      * @response 200 application/json "Successfully authenticated with GitHub" {
-     *   user:object="User profile information",
-     *   tokens:{
-     *     access_token:string="JWT access token",
-     *     refresh_token:string="JWT refresh token",
-     *     expires_in:integer="Token expiration time in seconds"
+     *   access_token:string="JWT access token",
+     *   token_type:string="Bearer",
+     *   expires_in:integer="Token expiration time in seconds",
+     *   refresh_token:string="Refresh token",
+     *   user:{
+     *     id:string="User UUID",
+     *     email:string="User email address",
+     *     email_verified:boolean="Whether the email has been verified",
+     *     username:string="Username",
+     *     name:string="Full display name",
+     *     given_name:string="First name",
+     *     family_name:string="Last name",
+     *     picture:string="Profile photo URL",
+     *     locale:string="User locale (default en-US)",
+     *     updated_at:integer="Last update Unix timestamp"
      *   }
      * }
      * @response 400 "Missing access token"
@@ -150,9 +204,21 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @param state query string true "State token for CSRF protection"
      * @response 200 application/json "Successfully authenticated with GitHub" {
      *   access_token:string="JWT access token",
-     *   refresh_token:string="JWT refresh token",
+     *   token_type:string="Bearer",
      *   expires_in:integer="Token expiration time in seconds",
-     *   user:object="User profile information"
+     *   refresh_token:string="Refresh token",
+     *   user:{
+     *     id:string="User UUID",
+     *     email:string="User email address",
+     *     email_verified:boolean="Whether the email has been verified",
+     *     username:string="Username",
+     *     name:string="Full display name",
+     *     given_name:string="First name",
+     *     family_name:string="Last name",
+     *     picture:string="Profile photo URL",
+     *     locale:string="User locale (default en-US)",
+     *     updated_at:integer="Last update Unix timestamp"
+     *   }
      * }
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
@@ -175,11 +241,21 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @tag Social Authentication
      * @requestBody id_token:string="ID token obtained from Sign in with Apple SDK" {required=id_token}
      * @response 200 application/json "Successfully authenticated with Apple" {
-     *   user:object="User profile information",
-     *   tokens:{
-     *     access_token:string="JWT access token",
-     *     refresh_token:string="JWT refresh token",
-     *     expires_in:integer="Token expiration time in seconds"
+     *   access_token:string="JWT access token",
+     *   token_type:string="Bearer",
+     *   expires_in:integer="Token expiration time in seconds",
+     *   refresh_token:string="Refresh token",
+     *   user:{
+     *     id:string="User UUID",
+     *     email:string="User email address",
+     *     email_verified:boolean="Whether the email has been verified",
+     *     username:string="Username",
+     *     name:string="Full display name",
+     *     given_name:string="First name",
+     *     family_name:string="Last name",
+     *     picture:string="Profile photo URL",
+     *     locale:string="User locale (default en-US)",
+     *     updated_at:integer="Last update Unix timestamp"
      *   }
      * }
      * @response 400 "Missing ID token"
@@ -199,9 +275,21 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * {required=code,state}
      * @response 200 application/json "Successfully authenticated with Apple" {
      *   access_token:string="JWT access token",
-     *   refresh_token:string="JWT refresh token",
+     *   token_type:string="Bearer",
      *   expires_in:integer="Token expiration time in seconds",
-     *   user:object="User profile information"
+     *   refresh_token:string="Refresh token",
+     *   user:{
+     *     id:string="User UUID",
+     *     email:string="User email address",
+     *     email_verified:boolean="Whether the email has been verified",
+     *     username:string="Username",
+     *     name:string="Full display name",
+     *     given_name:string="First name",
+     *     family_name:string="Last name",
+     *     picture:string="Profile photo URL",
+     *     locale:string="User locale (default en-US)",
+     *     updated_at:integer="Last update Unix timestamp"
+     *   }
      * }
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"

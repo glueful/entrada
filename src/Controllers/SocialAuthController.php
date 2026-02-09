@@ -401,13 +401,31 @@ class SocialAuthController
         }
 
         return [
-            'user' => $oidcUser,
-            'tokens' => [
-                'access_token' => $accessToken,
-                'refresh_token' => $refreshToken,
-                'expires_in' => (int)($session['expires_in'] ?? 0),
-                'token_type' => $session['token_type'] ?? 'Bearer',
-            ],
+            'access_token' => $accessToken,
+            'token_type' => $session['token_type'] ?? 'Bearer',
+            'expires_in' => (int)($session['expires_in'] ?? 0),
+            'refresh_token' => $refreshToken,
+            'user' => $this->formatUserResponse($oidcUser),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function formatUserResponse(array $user): array
+    {
+        return [
+            'id' => isset($user['id']) ? (string)$user['id'] : '',
+            'email' => $user['email'] ?? null,
+            'email_verified' => (bool)($user['email_verified'] ?? false),
+            'username' => isset($user['username']) ? (string)$user['username'] : '',
+            'name' => isset($user['name']) ? (string)$user['name'] : null,
+            'given_name' => isset($user['given_name']) ? (string)$user['given_name'] : null,
+            'family_name' => isset($user['family_name']) ? (string)$user['family_name'] : null,
+            'picture' => isset($user['picture']) ? (string)$user['picture'] : null,
+            'locale' => isset($user['locale']) ? (string)$user['locale'] : 'en-US',
+            'updated_at' => (int)($user['updated_at'] ?? time()),
         ];
     }
 }

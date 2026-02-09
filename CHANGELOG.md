@@ -14,6 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.6.2] - 2026-02-09
+
+### Changed
+- **Flat response structure**: `buildSessionResponse()` now returns `access_token`, `token_type`, `expires_in`, `refresh_token`, and `user` at the top level instead of nesting tokens in a `tokens` object.
+- **Explicit OIDC user formatting**: Added `formatUserResponse()` to `SocialAuthController` that maps the OIDC user to a fixed-shape response with all 10 fields: `id`, `email`, `email_verified`, `username`, `name`, `given_name`, `family_name`, `picture`, `locale`, `updated_at`. All fields are type-cast with sensible defaults.
+- **Route documentation**: Updated all 8 auth endpoint response docs to match the new flat response structure and full user object fields.
+
+### Notes
+- Patch release. No breaking changes to authentication flow.
+- Response shape changed from `{ user, tokens: { ... } }` to `{ access_token, token_type, expires_in, refresh_token, user: { ... } }`.
+
+---
+
 ## [1.6.1] - 2026-02-09
 
 ### Fixed
