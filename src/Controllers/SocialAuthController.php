@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Glueful\Extensions\Entrada\Controllers;
 
 use Glueful\Http\Response;
+use Glueful\Auth\TokenManager;
 use Glueful\Extensions\Entrada\Providers\GoogleAuthProvider;
 use Glueful\Extensions\Entrada\Providers\FacebookAuthProvider;
 use Glueful\Extensions\Entrada\Providers\GithubAuthProvider;
@@ -26,17 +27,20 @@ class SocialAuthController
     private FacebookAuthProvider $facebookProvider;
     private GithubAuthProvider $githubProvider;
     private AppleAuthProvider $appleProvider;
+    private TokenManager $tokenManager;
 
     public function __construct(
         GoogleAuthProvider $googleProvider,
         FacebookAuthProvider $facebookProvider,
         GithubAuthProvider $githubProvider,
-        AppleAuthProvider $appleProvider
+        AppleAuthProvider $appleProvider,
+        TokenManager $tokenManager
     ) {
         $this->googleProvider = $googleProvider;
         $this->facebookProvider = $facebookProvider;
         $this->githubProvider = $githubProvider;
         $this->appleProvider = $appleProvider;
+        $this->tokenManager = $tokenManager;
     }
 
     // =========================================================================
@@ -85,12 +89,10 @@ class SocialAuthController
                 return Response::unauthorized($error);
             }
 
-            $tokens = $this->googleProvider->generateTokens($userData);
-
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], 'Successfully authenticated with Google');
+            return Response::success(
+                $this->buildSessionResponse($userData, GoogleAuthProvider::PROVIDER),
+                'Successfully authenticated with Google'
+            );
         } catch (\Exception $e) {
             error_log('Google token verification error: ' . $e->getMessage());
             return Response::serverError('Failed to authenticate with Google');
@@ -112,12 +114,10 @@ class SocialAuthController
                 return Response::unauthorized($error);
             }
 
-            $tokens = $this->googleProvider->generateTokens($userData);
-
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], "Successfully authenticated with Google");
+            return Response::success(
+                $this->buildSessionResponse($userData, GoogleAuthProvider::PROVIDER),
+                "Successfully authenticated with Google"
+            );
         } catch (\Exception $e) {
             error_log("Google callback error: " . $e->getMessage());
             return Response::serverError("Failed to process Google authentication");
@@ -170,12 +170,10 @@ class SocialAuthController
                 return Response::unauthorized($error);
             }
 
-            $tokens = $this->facebookProvider->generateTokens($userData);
-
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], 'Successfully authenticated with Facebook');
+            return Response::success(
+                $this->buildSessionResponse($userData, FacebookAuthProvider::PROVIDER),
+                'Successfully authenticated with Facebook'
+            );
         } catch (\Exception $e) {
             error_log('Facebook token verification error: ' . $e->getMessage());
             return Response::serverError('Failed to authenticate with Facebook');
@@ -197,12 +195,10 @@ class SocialAuthController
                 return Response::unauthorized($error);
             }
 
-            $tokens = $this->facebookProvider->generateTokens($userData);
-
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], "Successfully authenticated with Facebook");
+            return Response::success(
+                $this->buildSessionResponse($userData, FacebookAuthProvider::PROVIDER),
+                "Successfully authenticated with Facebook"
+            );
         } catch (\Exception $e) {
             error_log("Facebook callback error: " . $e->getMessage());
             return Response::serverError("Failed to process Facebook authentication");
@@ -255,12 +251,10 @@ class SocialAuthController
                 return Response::unauthorized($error);
             }
 
-            $tokens = $this->githubProvider->generateTokens($userData);
-
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], 'Successfully authenticated with GitHub');
+            return Response::success(
+                $this->buildSessionResponse($userData, GithubAuthProvider::PROVIDER),
+                'Successfully authenticated with GitHub'
+            );
         } catch (\Exception $e) {
             error_log('GitHub token verification error: ' . $e->getMessage());
             return Response::serverError('Failed to authenticate with GitHub');
@@ -282,12 +276,10 @@ class SocialAuthController
                 return Response::unauthorized($error);
             }
 
-            $tokens = $this->githubProvider->generateTokens($userData);
-
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], "Successfully authenticated with GitHub");
+            return Response::success(
+                $this->buildSessionResponse($userData, GithubAuthProvider::PROVIDER),
+                "Successfully authenticated with GitHub"
+            );
         } catch (\Exception $e) {
             error_log("GitHub callback error: " . $e->getMessage());
             return Response::serverError("Failed to process GitHub authentication");
@@ -340,12 +332,10 @@ class SocialAuthController
                 return Response::unauthorized($error);
             }
 
-            $tokens = $this->appleProvider->generateTokens($userData);
-
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], 'Successfully authenticated with Apple');
+            return Response::success(
+                $this->buildSessionResponse($userData, AppleAuthProvider::PROVIDER),
+                'Successfully authenticated with Apple'
+            );
         } catch (\Exception $e) {
             error_log('Apple token verification error: ' . $e->getMessage());
             return Response::serverError('Failed to authenticate with Apple');
@@ -367,15 +357,57 @@ class SocialAuthController
                 return Response::unauthorized($error);
             }
 
-            $tokens = $this->appleProvider->generateTokens($userData);
-
-            return Response::success([
-                'user' => $userData,
-                'tokens' => $tokens
-            ], "Successfully authenticated with Apple");
+            return Response::success(
+                $this->buildSessionResponse($userData, AppleAuthProvider::PROVIDER),
+                "Successfully authenticated with Apple"
+            );
         } catch (\Exception $e) {
             error_log("Apple callback error: " . $e->getMessage());
             return Response::serverError("Failed to process Apple authentication");
         }
+    }
+
+    /**
+     * @param array<string, mixed> $userData
+     * @return array<string, mixed>
+     */
+    private function buildSessionResponse(array $userData, string $provider): array
+    {
+        if (!isset($userData['uuid']) || !is_string($userData['uuid']) || trim($userData['uuid']) === '') {
+            throw new \RuntimeException('Authenticated user is missing uuid');
+        }
+
+        $sessionUser = $userData;
+        if (!isset($sessionUser['username']) || !is_string($sessionUser['username']) || trim($sessionUser['username']) === '') {
+            if (isset($sessionUser['name']) && is_string($sessionUser['name']) && trim($sessionUser['name']) !== '') {
+                $sessionUser['username'] = trim($sessionUser['name']);
+            } elseif (isset($sessionUser['email']) && is_string($sessionUser['email']) && trim($sessionUser['email']) !== '') {
+                $sessionUser['username'] = strstr($sessionUser['email'], '@', true) ?: $sessionUser['uuid'];
+            } else {
+                $sessionUser['username'] = $sessionUser['uuid'];
+            }
+        }
+
+        $session = $this->tokenManager->createUserSession($sessionUser, $provider);
+        $accessToken = $session['access_token'] ?? null;
+        $refreshToken = $session['refresh_token'] ?? null;
+        $oidcUser = $session['user'] ?? null;
+
+        if (!is_string($accessToken) || $accessToken === '' || !is_string($refreshToken) || $refreshToken === '') {
+            throw new \RuntimeException('Failed to create authenticated session');
+        }
+        if (!is_array($oidcUser) || $oidcUser === []) {
+            throw new \RuntimeException('Failed to build authenticated user profile');
+        }
+
+        return [
+            'user' => $oidcUser,
+            'tokens' => [
+                'access_token' => $accessToken,
+                'refresh_token' => $refreshToken,
+                'expires_in' => (int)($session['expires_in'] ?? 0),
+                'token_type' => $session['token_type'] ?? 'Bearer',
+            ],
+        ];
     }
 }

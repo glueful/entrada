@@ -20,6 +20,8 @@ use Glueful\Http\Exceptions\HttpException;
  */
 class FacebookAuthProvider extends AbstractSocialProvider
 {
+    public const PROVIDER = 'facebook';
+
     /** @var string App ID from Facebook Developers */
     private string $appId;
 
@@ -43,7 +45,7 @@ class FacebookAuthProvider extends AbstractSocialProvider
         parent::__construct($context);
 
         // Set provider name
-        $this->providerName = 'facebook';
+        $this->providerName = self::PROVIDER;
 
         // Initialize HTTP client
         $this->httpClient = $this->context->getContainer()->get(Client::class);

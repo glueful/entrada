@@ -178,7 +178,7 @@ SAUTH_SYNC_PROFILE=true
 
 ### Extension Configuration
 
-Customize behavior in the extension's `config.php`:
+Customize behavior in `config/sauth.php`:
 
 ```php
 return [
@@ -215,6 +215,88 @@ return [
     ],
 ];
 ```
+
+### Advanced User Provisioning
+
+Entrada now supports configurable social-field mapping, storage-column mapping, and an optional post-registration hook.
+
+#### 1) Field and storage mapping
+
+Use this when your app schema differs from Glueful defaults (for example, custom username/photo columns).
+
+```php
+return [
+    'field_mapping' => [
+        'social' => [
+            'uuid' => ['id'],
+            'email' => ['email'],
+            'username' => ['username', 'login'],
+            'first_name' => ['first_name', 'given_name'],
+            'last_name' => ['last_name', 'family_name'],
+            'photo_url' => ['photo_url', 'picture', 'avatar_url'],
+            'email_verified' => ['verified_email', 'email_verified'],
+        ],
+    ],
+    'storage' => [
+        'users' => [
+            'table' => 'users',
+            'columns' => [
+                'uuid' => 'uuid',
+                'username' => 'username',
+                'email' => 'email',
+                'password' => 'password',
+                'status' => 'status',
+                'created_at' => 'created_at',
+                'email_verified_at' => 'email_verified_at',
+            ],
+        ],
+        'profiles' => [
+            'table' => 'profiles',
+            'columns' => [
+                'uuid' => 'uuid',
+                'user_uuid' => 'user_uuid',
+                'first_name' => 'first_name',
+                'last_name' => 'last_name',
+                'photo_url' => 'photo_url',
+            ],
+        ],
+    ],
+];
+```
+
+#### 2) Optional post-registration hook (disabled by default)
+
+Use this to run app-specific bootstrap logic after social signup (for example: assign a default role).
+
+```php
+return [
+    'post_registration' => [
+        'enabled' => false, // opt-in
+        // Invokable class-string (recommended) or callable
+        // Signature: (string $userUuid, array $socialData, ApplicationContext $context): void
+        'handler' => App\Auth\SocialRegistrationHandler::class,
+    ],
+];
+```
+
+Recommended handler pattern:
+
+- Keep Entrada generic.
+- Put business logic (roles, app profiles, tenant defaults) in your app handler.
+- Throw on critical failures when strict behavior is desired.
+
+#### 3) Transaction behavior for social registration
+
+For new social users, Entrada runs the core creation sequence in a single DB transaction:
+
+1. Insert user
+2. Link social account
+3. Run post-registration handler (if enabled)
+4. Commit
+
+If any step fails, the transaction is rolled back and signup fails with a generic API error.
+
+Note: profile synchronization remains best-effort and runs after core creation.
 
 ## Usage
 

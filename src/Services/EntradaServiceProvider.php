@@ -13,6 +13,7 @@ use Glueful\Extensions\Entrada\Providers\AppleAuthProvider;
 use Glueful\Extensions\Entrada\Controllers\SocialAuthController;
 use Glueful\Extensions\Entrada\Controllers\SocialAccountController;
 use Glueful\Auth\AuthBootstrap;
+use Glueful\Auth\TokenManager;
 
 class EntradaServiceProvider extends ServiceProvider
 {
@@ -47,6 +48,7 @@ class EntradaServiceProvider extends ServiceProvider
                     '@' . FacebookAuthProvider::class,
                     '@' . GithubAuthProvider::class,
                     '@' . AppleAuthProvider::class,
+                    '@' . TokenManager::class,
                 ],
             ],
             SocialAccountController::class => ['class' => SocialAccountController::class, 'shared' => true, 'autowire' => true],
@@ -65,13 +67,18 @@ class EntradaServiceProvider extends ServiceProvider
         try {
             $authManager = app($context, AuthBootstrap::class)->getManager();
             $config = config($context, 'sauth', []);
-            $enabled = $config['enabled_providers'] ?? ['google', 'facebook', 'github', 'apple'];
+            $enabled = $config['enabled_providers'] ?? [
+                GoogleAuthProvider::PROVIDER,
+                FacebookAuthProvider::PROVIDER,
+                GithubAuthProvider::PROVIDER,
+                AppleAuthProvider::PROVIDER,
+            ];
 
             $map = [
-                'google' => GoogleAuthProvider::class,
-                'facebook' => FacebookAuthProvider::class,
-                'github' => GithubAuthProvider::class,
-                'apple' => AppleAuthProvider::class,
+                GoogleAuthProvider::PROVIDER => GoogleAuthProvider::class,
+                FacebookAuthProvider::PROVIDER => FacebookAuthProvider::class,
+                GithubAuthProvider::PROVIDER => GithubAuthProvider::class,
+                AppleAuthProvider::PROVIDER => AppleAuthProvider::class,
             ];
 
             foreach ($enabled as $name) {

@@ -14,6 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.6.0] - 2026-02-09
+
+### Added
+- **Framework session flow for social login**: Token issuance now uses `TokenManager::createUserSession()` instead of per-provider `generateTokens()` calls. Social logins get the same session storage (DB + cache), OIDC-compliant response shape, and token lifecycle as standard logins.
+- **Post-registration hook**: New `post_registration` config in `sauth.php` allows apps to run custom logic (e.g. role assignment) after social user creation. Disabled by default. Supports invokable class-strings resolved via DI or any callable. Handler signature: `(string $userUuid, array $socialData, ApplicationContext $context): void`.
+- **Transactional social user creation**: `createUserFromSocial()` now wraps user insert, social account linking, and post-registration handler in a single DB transaction. Any failure rolls back all changes.
+- **Provider name constants**: Each provider now exposes a `public const PROVIDER` (`'google'`, `'facebook'`, `'github'`, `'apple'`) used across controller, service provider, and provider registration to eliminate string drift.
+
+### Changed
+- **SocialAuthController**: Injected `TokenManager` via DI. All 8 callback/native endpoints now route through a single `buildSessionResponse()` helper that validates the OIDC user profile from `createUserSession()` and returns a structured `user` + `tokens` response.
+- **EntradaServiceProvider**: Default enabled providers list and provider registration map now reference `<Provider>::PROVIDER` constants instead of hardcoded strings. `TokenManager` wired as explicit controller argument.
+- **OIDC user validation**: `buildSessionResponse()` requires a valid OIDC user from `createUserSession()` and throws if missing, instead of falling back to raw provider payload.
+
+### Notes
+- No breaking changes to the public API. Response shape remains `{ user, tokens }`.
+- Requires Glueful Framework 1.30.0+ (unchanged from 1.5.x).
+- Apps that want post-registration behavior must opt in via `sauth.post_registration.enabled = true` and configure a handler.
+
 ## [1.5.2] - 2026-02-09
 
 ### Fixed
