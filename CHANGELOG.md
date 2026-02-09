@@ -14,6 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.4.0] - 2026-02-09
+
+### Changed
+- **Framework Compatibility**: Updated minimum framework requirement to Glueful 1.30.0 (Diphda release)
+- **Exception Imports**: Migrated from deleted legacy bridge class to modern exception namespace
+  - `Glueful\Exceptions\HttpException` → `Glueful\Http\Exceptions\HttpException` in `GoogleAuthProvider`, `AppleAuthProvider`, `FacebookAuthProvider`, `GithubAuthProvider`
+- **PHP 8.1+ Cleanup**: Removed redundant `setAccessible(true)` calls from `AppleAuthProvider` reflection usage (no-op since PHP 8.1)
+- **composer.json**: Updated `extra.glueful.requires.glueful` to `>=1.30.0`, version bumped to `1.4.0`
+
+### Notes
+- No breaking changes to extension API. Import paths and reflection cleanup are internal.
+- Requires Glueful Framework 1.30.0+ due to removal of legacy exception bridge classes.
+
 ## [1.3.1] - 2026-02-06
 
 ### Changed
