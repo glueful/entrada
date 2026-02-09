@@ -25,7 +25,6 @@ return [
         'social' => [
             'uuid' => ['id'],
             'email' => ['email'],
-            'name' => ['name'],
             'username' => ['username', 'login'],
             'first_name' => ['first_name', 'given_name'],
             'last_name' => ['last_name', 'family_name'],
@@ -48,7 +47,6 @@ return [
                 'uuid' => 'uuid',
                 'username' => 'username',
                 'email' => 'email',
-                'name' => 'name',
                 'password' => 'password',
                 'status' => 'status',
                 'created_at' => 'created_at',

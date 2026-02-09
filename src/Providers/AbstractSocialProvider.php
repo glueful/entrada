@@ -206,10 +206,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
     {
         $uuid = $this->userValue($user, 'uuid');
         $email = $this->userValue($user, 'email');
-        $name = $this->userValue($user, 'name');
-        if ($name === null || $name === '') {
-            $name = $this->userValue($user, 'username');
-        }
+        $name = $this->userValue($user, 'username');
 
         return [
             'uuid' => $uuid,
@@ -229,7 +226,6 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
         $uuidColumn = (string)($columns['uuid'] ?? 'uuid');
         $usernameColumn = (string)($columns['username'] ?? 'username');
         $emailColumn = (string)($columns['email'] ?? 'email');
-        $nameColumn = (string)($columns['name'] ?? 'name');
         $createdAtColumn = (string)($columns['created_at'] ?? 'created_at');
         $passwordColumn = (string)($columns['password'] ?? 'password');
         $statusColumn = (string)($columns['status'] ?? 'status');
@@ -237,11 +233,9 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
 
         $username = $this->resolveUsername($socialData);
         $email = $this->extractSocialValue($socialData, 'email');
-        $name = $this->extractSocialValue($socialData, 'name');
         $verified = $this->extractSocialValue($socialData, 'email_verified');
 
         $email = is_string($email) ? $email : null;
-        $name = is_string($name) ? $name : null;
 
         $userUuid = Utils::generateNanoID();
 
@@ -249,7 +243,6 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
             $uuidColumn => $userUuid,
             $usernameColumn => $username,
             $emailColumn => $email,
-            $nameColumn => $name,
             $createdAtColumn => date('Y-m-d H:i:s'),
         ];
 
@@ -268,7 +261,8 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
         try {
             $saved = $this->db->table($table)->insert($userData);
         } catch (\Throwable $e) {
-            $this->lastError = 'Failed to create user account: ' . $e->getMessage();
+            error_log("[{$this->providerName}] User creation failed: " . $e->getMessage());
+            $this->lastError = 'Failed to create user account';
             return null;
         }
 
@@ -297,7 +291,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
      * Priority:
      * 1) extracted username from provider payload
      * 2) generated from first/given name + family initial
-     * 3) generated from display name or email local-part
+     * 3) generated from email local-part
      * 4) fallback random user_<id>
      */
     protected function resolveUsername(array $socialData): string
@@ -342,7 +336,6 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
      *
      * For providers that don't supply username directly:
      * - first/given name + first letter of family/last name
-     * - else display-name first token
      * - else email local-part
      */
     protected function generateUsername(array $socialData): string
@@ -364,13 +357,6 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
 
         if ($firstName !== '') {
             return $firstName . $lastInitial;
-        }
-
-        if (!empty($socialData['name']) && is_string($socialData['name'])) {
-            $parts = preg_split('/\s+/', trim($socialData['name']));
-            if (is_array($parts) && !empty($parts[0])) {
-                return $parts[0];
-            }
         }
 
         if (!empty($socialData['email']) && is_string($socialData['email'])) {
