@@ -314,12 +314,23 @@ class GoogleAuthProvider extends AbstractSocialProvider
         }
 
         // Format profile data to our standard format
+        $firstName = $userProfile['given_name'] ?? null;
+        $lastName = $userProfile['family_name'] ?? null;
+
         return [
             'id' => $userProfile['sub'] ?? null,
             'email' => $userProfile['email'] ?? null,
             'name' => $userProfile['name'] ?? null,
-            'first_name' => $userProfile['given_name'] ?? null,
-            'last_name' => $userProfile['family_name'] ?? null,
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+            'given_name' => $firstName,
+            'family_name' => $lastName,
+            'username' => $this->generateUsername([
+                'given_name' => $firstName,
+                'family_name' => $lastName,
+                'name' => $userProfile['name'] ?? null,
+                'email' => $userProfile['email'] ?? null,
+            ]),
             'picture' => $userProfile['picture'] ?? null,
             'locale' => $userProfile['locale'] ?? null,
             'verified_email' => $userProfile['email_verified'] ?? false,
@@ -404,12 +415,23 @@ class GoogleAuthProvider extends AbstractSocialProvider
         }
 
         // Format profile data to our standard format
+        $firstName = $tokenInfo['given_name'] ?? null;
+        $lastName = $tokenInfo['family_name'] ?? null;
+
         return [
             'id' => $tokenInfo['sub'] ?? null,
             'email' => $tokenInfo['email'] ?? null,
             'name' => $tokenInfo['name'] ?? null,
-            'first_name' => $tokenInfo['given_name'] ?? null,
-            'last_name' => $tokenInfo['family_name'] ?? null,
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+            'given_name' => $firstName,
+            'family_name' => $lastName,
+            'username' => $this->generateUsername([
+                'given_name' => $firstName,
+                'family_name' => $lastName,
+                'name' => $tokenInfo['name'] ?? null,
+                'email' => $tokenInfo['email'] ?? null,
+            ]),
             'picture' => $tokenInfo['picture'] ?? null,
             'locale' => $tokenInfo['locale'] ?? null,
             'verified_email' => ($tokenInfo['email_verified'] ?? 'false') === 'true',
