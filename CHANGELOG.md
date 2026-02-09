@@ -14,6 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.5.0] - 2026-02-09
+
+### Added
+- **Configurable Social Field Aliases**: New `field_mapping.social` section in `sauth.php` maps canonical keys (`uuid`, `email`, `first_name`, `photo_url`, etc.) to ordered alias lists. First non-empty match from the provider payload wins, decoupling provider-specific field names from persistence logic.
+- **Configurable DB Storage Mapping**: New `storage` section in `sauth.php` lets applications customize table names, column names, and default values for both `users` and `profiles` tables. Defaults match the Glueful api-skeleton schema.
+- **Username Collision Avoidance**: `resolveUsername()` generates unique usernames with priority: extracted username → generated from names → email local-part → random fallback. Sanitizes to `[a-z0-9_]`, pads to min 3 chars, caps at 24, and appends numeric suffix (1–9999) on collision.
+- **Profile Sync from Social Data**: `syncUserProfileFromSocial()` syncs `first_name`, `last_name`, and `photo_url` into the configurable profiles table. Creates a profile row if missing, updates if existing. Controlled by the `sync_profile` config flag.
+
+### Changed
+- **Refactored `AbstractSocialProvider`**: `findOrCreateUser()` and `createUserFromSocial()` now use configurable field aliases and DB storage mappings throughout instead of hardcoded column names.
+- **`sauth.php` Config**: Added `field_mapping` and `storage` sections with sensible defaults for the standard Glueful schema.
+
+### Notes
+- No breaking changes. Existing installations using the default Glueful schema require no config changes — the defaults match the previous hardcoded behavior.
+- Applications with non-standard table/column names can now configure Entrada without forking the provider classes.
+
 ## [1.4.1] - 2026-02-09
 
 ### Fixed

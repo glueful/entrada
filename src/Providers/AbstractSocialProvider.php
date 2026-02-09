@@ -105,24 +105,39 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
 
     protected function findOrCreateUser(array $socialData): ?array
     {
+        $socialId = (string)($this->extractSocialValue($socialData, 'uuid') ?? '');
+        if ($socialId === '') {
+            $this->lastError = 'Social profile is missing provider user id';
+            return null;
+        }
+
         $existingUser = $this->findUserBySocialId(
             $this->providerName,
-            $socialData['id']
+            $socialId
         );
 
         if ($existingUser) {
+            $this->syncUserProfileFromSocial($existingUser, $socialData);
             return $this->formatUserData($existingUser);
         }
 
-        if (!empty($socialData['email'])) {
-            $emailUser = $this->userRepository->findByEmail($socialData['email']);
+        $email = $this->extractSocialValue($socialData, 'email');
+        if (!empty($email) && is_string($email)) {
+            $emailUser = $this->findUserByEmail($email);
             if ($emailUser) {
+                $emailUserUuid = $this->userValue($emailUser, 'uuid');
+                if (!is_string($emailUserUuid) || $emailUserUuid === '') {
+                    $this->lastError = 'Matched user is missing UUID';
+                    return null;
+                }
+
                 $this->linkSocialAccount(
-                    $emailUser['uuid'],
+                    $emailUserUuid,
                     $this->providerName,
-                    $socialData['id'],
+                    $socialId,
                     $socialData
                 );
+                $this->syncUserProfileFromSocial($emailUser, $socialData);
                 return $this->formatUserData($emailUser);
             }
         }
@@ -149,7 +164,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
             return null;
         }
 
-        return $this->userRepository->findByUUID($result[0]['user_uuid']);
+        return $this->findUserByUuid((string)$result[0]['user_uuid']);
     }
 
     protected function linkSocialAccount(
@@ -189,31 +204,389 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
 
     protected function formatUserData(array $user): array
     {
+        $uuid = $this->userValue($user, 'uuid');
+        $email = $this->userValue($user, 'email');
+        $name = $this->userValue($user, 'name');
+        if ($name === null || $name === '') {
+            $name = $this->userValue($user, 'username');
+        }
+
         return [
-            'uuid' => $user['uuid'] ?? null,
-            'email' => $user['email'] ?? null,
-            'name' => $user['name'] ?? ($user['username'] ?? null),
+            'uuid' => $uuid,
+            'email' => $email,
+            'name' => $name,
             'roles' => $user['roles'] ?? [],
         ];
     }
 
     protected function createUserFromSocial(array $socialData): ?array
     {
+        $userConfig = $this->getStorageConfig('users');
+        $table = (string)($userConfig['table'] ?? 'users');
+        $columns = is_array($userConfig['columns'] ?? null) ? $userConfig['columns'] : [];
+        $defaults = is_array($userConfig['defaults'] ?? null) ? $userConfig['defaults'] : [];
+
+        $uuidColumn = (string)($columns['uuid'] ?? 'uuid');
+        $usernameColumn = (string)($columns['username'] ?? 'username');
+        $emailColumn = (string)($columns['email'] ?? 'email');
+        $nameColumn = (string)($columns['name'] ?? 'name');
+        $createdAtColumn = (string)($columns['created_at'] ?? 'created_at');
+        $passwordColumn = (string)($columns['password'] ?? 'password');
+        $statusColumn = (string)($columns['status'] ?? 'status');
+        $emailVerifiedAtColumn = (string)($columns['email_verified_at'] ?? 'email_verified_at');
+
+        $username = $this->resolveUsername($socialData);
+        $email = $this->extractSocialValue($socialData, 'email');
+        $name = $this->extractSocialValue($socialData, 'name');
+        $verified = $this->extractSocialValue($socialData, 'email_verified');
+
+        $email = is_string($email) ? $email : null;
+        $name = is_string($name) ? $name : null;
+
+        $userUuid = Utils::generateNanoID();
+
         $userData = [
-            'uuid' => Utils::generateNanoID(),
-            'email' => $socialData['email'] ?? null,
-            'name' => $socialData['name'] ?? ($socialData['username'] ?? null),
-            'created_at' => date('Y-m-d H:i:s')
+            $uuidColumn => $userUuid,
+            $usernameColumn => $username,
+            $emailColumn => $email,
+            $nameColumn => $name,
+            $createdAtColumn => date('Y-m-d H:i:s'),
         ];
 
-        $saved = $this->userRepository->create($userData);
+        if (array_key_exists('password', $columns) || array_key_exists('password', $defaults)) {
+            $userData[$passwordColumn] = $defaults['password'] ?? null;
+        }
+
+        if (array_key_exists('status', $columns) || array_key_exists('status', $defaults)) {
+            $userData[$statusColumn] = $defaults['status'] ?? 'active';
+        }
+
+        if ((bool)$verified && (array_key_exists('email_verified_at', $columns) || array_key_exists('email_verified_at', $defaults))) {
+            $userData[$emailVerifiedAtColumn] = date('Y-m-d H:i:s');
+        }
+
+        try {
+            $saved = $this->db->table($table)->insert($userData);
+        } catch (\Throwable $e) {
+            $this->lastError = 'Failed to create user account: ' . $e->getMessage();
+            return null;
+        }
+
         if (!$saved) {
             $this->lastError = 'Failed to create user account';
             return null;
         }
 
-        $this->linkSocialAccount($userData['uuid'], $this->providerName, $socialData['id'], $socialData);
+        $socialId = (string)($this->extractSocialValue($socialData, 'uuid') ?? '');
+        if ($socialId !== '') {
+            $this->linkSocialAccount($userUuid, $this->providerName, $socialId, $socialData);
+        }
+
+        $createdUser = $this->findUserByUuid($userUuid);
+        if ($createdUser !== null) {
+            $this->syncUserProfileFromSocial($createdUser, $socialData);
+            return $this->formatUserData($createdUser);
+        }
+
         return $this->formatUserData($userData);
+    }
+
+    /**
+     * Resolve a unique username for social-auth user creation.
+     *
+     * Priority:
+     * 1) extracted username from provider payload
+     * 2) generated from first/given name + family initial
+     * 3) generated from display name or email local-part
+     * 4) fallback random user_<id>
+     */
+    protected function resolveUsername(array $socialData): string
+    {
+        $preferred = '';
+
+        if (!empty($socialData['username']) && is_string($socialData['username'])) {
+            $preferred = $socialData['username'];
+        } else {
+            $preferred = $this->generateUsername($socialData);
+        }
+
+        $base = $this->sanitizeUsername($preferred);
+        if ($base === '') {
+            $base = 'user';
+        }
+
+        if (strlen($base) < 3) {
+            $base = str_pad($base, 3, 'x');
+        }
+
+        // Keep room for numeric suffix.
+        $base = substr($base, 0, 24);
+
+        if (!$this->usernameExists($base)) {
+            return $base;
+        }
+
+        for ($i = 1; $i <= 9999; $i++) {
+            $suffix = (string) $i;
+            $candidate = substr($base, 0, 24 - strlen($suffix)) . $suffix;
+            if (!$this->usernameExists($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return 'user' . substr(strtolower(Utils::generateNanoID()), 0, 8);
+    }
+
+    /**
+     * Default username generation strategy.
+     *
+     * For providers that don't supply username directly:
+     * - first/given name + first letter of family/last name
+     * - else display-name first token
+     * - else email local-part
+     */
+    protected function generateUsername(array $socialData): string
+    {
+        $firstName = '';
+        $lastInitial = '';
+
+        if (!empty($socialData['given_name']) && is_string($socialData['given_name'])) {
+            $firstName = $socialData['given_name'];
+        } elseif (!empty($socialData['first_name']) && is_string($socialData['first_name'])) {
+            $firstName = $socialData['first_name'];
+        }
+
+        if (!empty($socialData['family_name']) && is_string($socialData['family_name'])) {
+            $lastInitial = substr(trim($socialData['family_name']), 0, 1);
+        } elseif (!empty($socialData['last_name']) && is_string($socialData['last_name'])) {
+            $lastInitial = substr(trim($socialData['last_name']), 0, 1);
+        }
+
+        if ($firstName !== '') {
+            return $firstName . $lastInitial;
+        }
+
+        if (!empty($socialData['name']) && is_string($socialData['name'])) {
+            $parts = preg_split('/\s+/', trim($socialData['name']));
+            if (is_array($parts) && !empty($parts[0])) {
+                return $parts[0];
+            }
+        }
+
+        if (!empty($socialData['email']) && is_string($socialData['email'])) {
+            $emailParts = explode('@', $socialData['email']);
+            if (!empty($emailParts[0])) {
+                return $emailParts[0];
+            }
+        }
+
+        return 'user_' . substr(strtolower(Utils::generateNanoID()), 0, 8);
+    }
+
+    private function sanitizeUsername(string $username): string
+    {
+        $username = strtolower(trim($username));
+        $username = preg_replace('/[^a-z0-9_]/', '', $username) ?? '';
+        return $username;
+    }
+
+    private function usernameExists(string $username): bool
+    {
+        $userConfig = $this->getStorageConfig('users');
+        $table = (string)($userConfig['table'] ?? 'users');
+        $columns = is_array($userConfig['columns'] ?? null) ? $userConfig['columns'] : [];
+
+        $usernameColumn = (string)($columns['username'] ?? 'username');
+        $uuidColumn = (string)($columns['uuid'] ?? 'uuid');
+
+        $existing = $this->db->table($table)
+            ->select([$uuidColumn])
+            ->where($usernameColumn, $username)
+            ->limit(1)
+            ->get();
+
+        return !empty($existing);
+    }
+
+    private function getSauthConfig(): array
+    {
+        $config = config($this->context, 'sauth', []);
+        return is_array($config) ? $config : [];
+    }
+
+    private function getStorageConfig(string $entity): array
+    {
+        $config = $this->getSauthConfig();
+        $storage = $config['storage'] ?? [];
+
+        if (!is_array($storage) || !is_array($storage[$entity] ?? null)) {
+            return [];
+        }
+
+        return $storage[$entity];
+    }
+
+    private function getFieldMappingConfig(): array
+    {
+        $config = $this->getSauthConfig();
+        $mapping = $config['field_mapping'] ?? [];
+        return is_array($mapping) ? $mapping : [];
+    }
+
+    /**
+     * Resolve canonical field value from social payload via configurable aliases.
+     */
+    private function extractSocialValue(array $socialData, string $canonicalKey): mixed
+    {
+        $mapping = $this->getFieldMappingConfig();
+        $socialMap = is_array($mapping['social'] ?? null) ? $mapping['social'] : [];
+        $aliases = $socialMap[$canonicalKey] ?? [$canonicalKey];
+
+        if (!is_array($aliases)) {
+            $aliases = [$aliases];
+        }
+
+        foreach ($aliases as $alias) {
+            if (!is_string($alias) || $alias === '') {
+                continue;
+            }
+
+            if (array_key_exists($alias, $socialData) && $socialData[$alias] !== null) {
+                return $socialData[$alias];
+            }
+        }
+
+        return null;
+    }
+
+    private function userValue(array $user, string $canonicalKey): mixed
+    {
+        $userConfig = $this->getStorageConfig('users');
+        $columns = is_array($userConfig['columns'] ?? null) ? $userConfig['columns'] : [];
+        $mappedColumn = (string)($columns[$canonicalKey] ?? $canonicalKey);
+
+        if (array_key_exists($mappedColumn, $user)) {
+            return $user[$mappedColumn];
+        }
+
+        if (array_key_exists($canonicalKey, $user)) {
+            return $user[$canonicalKey];
+        }
+
+        return null;
+    }
+
+    private function findUserByEmail(string $email): ?array
+    {
+        $userConfig = $this->getStorageConfig('users');
+        $table = (string)($userConfig['table'] ?? 'users');
+        $columns = is_array($userConfig['columns'] ?? null) ? $userConfig['columns'] : [];
+        $emailColumn = (string)($columns['email'] ?? 'email');
+
+        $result = $this->db->table($table)
+            ->select(['*'])
+            ->where($emailColumn, $email)
+            ->limit(1)
+            ->get();
+
+        return !empty($result) ? $result[0] : null;
+    }
+
+    private function findUserByUuid(string $uuid): ?array
+    {
+        $userConfig = $this->getStorageConfig('users');
+        $table = (string)($userConfig['table'] ?? 'users');
+        $columns = is_array($userConfig['columns'] ?? null) ? $userConfig['columns'] : [];
+        $uuidColumn = (string)($columns['uuid'] ?? 'uuid');
+
+        $result = $this->db->table($table)
+            ->select(['*'])
+            ->where($uuidColumn, $uuid)
+            ->limit(1)
+            ->get();
+
+        return !empty($result) ? $result[0] : null;
+    }
+
+    private function syncUserProfileFromSocial(array $user, array $socialData): void
+    {
+        $config = $this->getSauthConfig();
+        if (!($config['sync_profile'] ?? true)) {
+            return;
+        }
+
+        $profileConfig = $this->getStorageConfig('profiles');
+        $table = (string)($profileConfig['table'] ?? 'profiles');
+        $columns = is_array($profileConfig['columns'] ?? null) ? $profileConfig['columns'] : [];
+        if ($table === '' || $columns === []) {
+            return;
+        }
+
+        $userUuid = $this->userValue($user, 'uuid');
+        if (!is_string($userUuid) || $userUuid === '') {
+            return;
+        }
+
+        $firstName = $this->extractSocialValue($socialData, 'first_name');
+        $lastName = $this->extractSocialValue($socialData, 'last_name');
+        $photoUrl = $this->extractSocialValue($socialData, 'photo_url');
+
+        $update = [];
+        if (array_key_exists('first_name', $columns) && $firstName !== null) {
+            $update[(string)$columns['first_name']] = $firstName;
+        }
+        if (array_key_exists('last_name', $columns) && $lastName !== null) {
+            $update[(string)$columns['last_name']] = $lastName;
+        }
+        if (array_key_exists('photo_url', $columns) && $photoUrl !== null) {
+            $update[(string)$columns['photo_url']] = $photoUrl;
+        }
+
+        if ($update === []) {
+            return;
+        }
+
+        $userUuidColumn = (string)($columns['user_uuid'] ?? 'user_uuid');
+        $existing = $this->db->table($table)
+            ->select(['*'])
+            ->where($userUuidColumn, $userUuid)
+            ->limit(1)
+            ->get();
+
+        $now = date('Y-m-d H:i:s');
+
+        try {
+            if (!empty($existing)) {
+                if (array_key_exists('updated_at', $columns)) {
+                    $update[(string)$columns['updated_at']] = $now;
+                }
+                $this->db->table($table)
+                    ->where($userUuidColumn, $userUuid)
+                    ->update($update);
+                return;
+            }
+
+            $insert = $update;
+            if (array_key_exists('uuid', $columns)) {
+                $insert[(string)$columns['uuid']] = Utils::generateNanoID();
+            }
+            $insert[$userUuidColumn] = $userUuid;
+            if (array_key_exists('created_at', $columns)) {
+                $insert[(string)$columns['created_at']] = $now;
+            }
+            if (array_key_exists('updated_at', $columns)) {
+                $insert[(string)$columns['updated_at']] = $now;
+            }
+
+            $defaults = is_array($profileConfig['defaults'] ?? null) ? $profileConfig['defaults'] : [];
+            if (array_key_exists('status', $columns) && array_key_exists('status', $defaults)) {
+                $insert[(string)$columns['status']] = $defaults['status'];
+            }
+
+            $this->db->table($table)->insert($insert);
+        } catch (\Throwable $e) {
+            error_log("[{$this->providerName}] Profile sync failed: " . $e->getMessage());
+        }
     }
 
     abstract protected function isOAuthCallback(Request $request): bool;
@@ -231,4 +604,3 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
     }
 
 }
-

@@ -14,6 +14,69 @@ return [
     'link_accounts' => true,  // Allow linking social accounts to existing users
     'sync_profile' => true,   // Sync profile data from social providers
 
+    /*
+    |--------------------------------------------------------------------------
+    | Field Mapping (Social payload -> canonical keys)
+    |--------------------------------------------------------------------------
+    | Configure which social payload keys map to canonical values used by
+    | Entrada. First non-empty value wins.
+    */
+    'field_mapping' => [
+        'social' => [
+            'uuid' => ['id'],
+            'email' => ['email'],
+            'name' => ['name'],
+            'username' => ['username', 'login'],
+            'first_name' => ['first_name', 'given_name'],
+            'last_name' => ['last_name', 'family_name'],
+            'photo_url' => ['photo_url', 'picture', 'avatar_url'],
+            'email_verified' => ['verified_email', 'email_verified'],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Storage Mapping (canonical keys -> DB columns)
+    |--------------------------------------------------------------------------
+    | Use this when your application uses different table/column names.
+    | Defaults match Glueful api-skeleton schema.
+    */
+    'storage' => [
+        'users' => [
+            'table' => 'users',
+            'columns' => [
+                'uuid' => 'uuid',
+                'username' => 'username',
+                'email' => 'email',
+                'name' => 'name',
+                'password' => 'password',
+                'status' => 'status',
+                'created_at' => 'created_at',
+                'email_verified_at' => 'email_verified_at',
+            ],
+            'defaults' => [
+                'status' => 'active',
+                'password' => null,
+            ],
+        ],
+        'profiles' => [
+            'table' => 'profiles',
+            'columns' => [
+                'uuid' => 'uuid',
+                'user_uuid' => 'user_uuid',
+                'first_name' => 'first_name',
+                'last_name' => 'last_name',
+                'photo_url' => 'photo_url',
+                'status' => 'status',
+                'created_at' => 'created_at',
+                'updated_at' => 'updated_at',
+            ],
+            'defaults' => [
+                'status' => 'active',
+            ],
+        ],
+    ],
+
     // Google OAuth settings
     'google' => [
         'client_id' => env('GOOGLE_CLIENT_ID', ''),
