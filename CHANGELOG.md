@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.5.2] - 2026-02-09
+
+### Fixed
+- **Controller error response sanitization**: All 12 `SocialAuthController` endpoints (init, native token, callback for Google, Facebook, GitHub, Apple) now log internal exception details via `error_log()` and return generic error messages to the API. Previously, `$e->getMessage()` was passed directly to `Response::serverError()`, which could leak internal stack traces or provider API error details to clients.
+
+### Notes
+- Patch release. No breaking changes.
+
 ## [1.5.1] - 2026-02-09
 
 ### Changed
