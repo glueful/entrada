@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.5.1] - 2026-02-09
+
+### Changed
+- **Removed `name` from social persistence path**: User creation no longer writes a `name` column. `formatUserData()` now returns `username` as the display name. Removed `name` alias from `field_mapping` config.
+- **Simplified username generation**: `generateUsername()` no longer falls back to display name; priority is now first/last name → email local-part → random.
+
+### Fixed
+- **Error message sanitization**: `createUserFromSocial()` now logs internal DB errors via `error_log()` server-side and returns a generic `"Failed to create user account"` to the API, preventing SQLSTATE/column details from leaking to clients.
+
+### Notes
+- Patch release. No breaking changes.
+
 ## [1.5.0] - 2026-02-09
 
 ### Added
