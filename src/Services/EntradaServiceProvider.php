@@ -10,6 +10,8 @@ use Glueful\Extensions\Entrada\Providers\GoogleAuthProvider;
 use Glueful\Extensions\Entrada\Providers\FacebookAuthProvider;
 use Glueful\Extensions\Entrada\Providers\GithubAuthProvider;
 use Glueful\Extensions\Entrada\Providers\AppleAuthProvider;
+use Glueful\Extensions\Entrada\Controllers\SocialAuthController;
+use Glueful\Extensions\Entrada\Controllers\SocialAccountController;
 use Glueful\Auth\AuthBootstrap;
 
 class EntradaServiceProvider extends ServiceProvider
@@ -37,6 +39,17 @@ class EntradaServiceProvider extends ServiceProvider
             FacebookAuthProvider::class => ['class' => FacebookAuthProvider::class, 'shared' => true, 'autowire' => true],
             GithubAuthProvider::class => ['class' => GithubAuthProvider::class, 'shared' => true, 'autowire' => true],
             AppleAuthProvider::class => ['class' => AppleAuthProvider::class, 'shared' => true, 'autowire' => true],
+            SocialAuthController::class => [
+                'class' => SocialAuthController::class,
+                'shared' => true,
+                'arguments' => [
+                    '@' . GoogleAuthProvider::class,
+                    '@' . FacebookAuthProvider::class,
+                    '@' . GithubAuthProvider::class,
+                    '@' . AppleAuthProvider::class,
+                ],
+            ],
+            SocialAccountController::class => ['class' => SocialAccountController::class, 'shared' => true, 'autowire' => true],
         ];
     }
 
