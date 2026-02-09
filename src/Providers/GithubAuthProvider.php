@@ -21,6 +21,8 @@ use Glueful\Helpers\Utils;
  */
 class GithubAuthProvider extends AbstractSocialProvider
 {
+    public const PROVIDER = 'github';
+
     /** @var string Client ID from GitHub OAuth Apps */
     private string $clientId;
 
@@ -44,7 +46,7 @@ class GithubAuthProvider extends AbstractSocialProvider
         parent::__construct($context);
 
         // Set provider name
-        $this->providerName = 'github';
+        $this->providerName = self::PROVIDER;
 
             // Initialize HTTP client
         $this->httpClient =$this->context->getContainer()->get(Client::class);

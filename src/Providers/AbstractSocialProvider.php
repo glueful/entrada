@@ -258,22 +258,27 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
             $userData[$emailVerifiedAtColumn] = date('Y-m-d H:i:s');
         }
 
+        $socialId = (string)($this->extractSocialValue($socialData, 'uuid') ?? '');
         try {
-            $saved = $this->db->table($table)->insert($userData);
+            $this->db->transaction(function () use ($table, $userData, $userUuid, $socialId, $socialData): void {
+                $saved = $this->db->table($table)->insert($userData);
+                if (!$saved) {
+                    throw new \RuntimeException('Failed to create user account');
+                }
+
+                if ($socialId !== '') {
+                    $linked = $this->linkSocialAccount($userUuid, $this->providerName, $socialId, $socialData);
+                    if (!$linked) {
+                        throw new \RuntimeException('Failed to link social account');
+                    }
+                }
+
+                $this->runPostRegistrationHandler($userUuid, $socialData);
+            });
         } catch (\Throwable $e) {
             error_log("[{$this->providerName}] User creation failed: " . $e->getMessage());
             $this->lastError = 'Failed to create user account';
             return null;
-        }
-
-        if (!$saved) {
-            $this->lastError = 'Failed to create user account';
-            return null;
-        }
-
-        $socialId = (string)($this->extractSocialValue($socialData, 'uuid') ?? '');
-        if ($socialId !== '') {
-            $this->linkSocialAccount($userUuid, $this->providerName, $socialId, $socialData);
         }
 
         $createdUser = $this->findUserByUuid($userUuid);
@@ -579,6 +584,39 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
     abstract protected function isOAuthInitRequest(Request $request): bool;
     abstract protected function handleCallback(Request $request): ?array;
     abstract protected function initiateOAuthFlow(Request $request): void;
+
+    private function runPostRegistrationHandler(string $userUuid, array $socialData): void
+    {
+        $config = $this->getSauthConfig();
+        $postRegistration = is_array($config['post_registration'] ?? null) ? $config['post_registration'] : [];
+        $enabled = (bool)($postRegistration['enabled'] ?? false);
+
+        if (!$enabled) {
+            return;
+        }
+
+        $handler = $postRegistration['handler'] ?? null;
+        if ($handler === null || $handler === '') {
+            throw new \RuntimeException('Post-registration handler is enabled but not configured');
+        }
+
+        $callable = null;
+
+        if (is_string($handler) && class_exists($handler)) {
+            $instance = app($this->context, $handler);
+            if (is_callable($instance)) {
+                $callable = $instance;
+            }
+        } elseif (is_callable($handler)) {
+            $callable = $handler;
+        }
+
+        if (!is_callable($callable)) {
+            throw new \RuntimeException('Configured post-registration handler is not callable');
+        }
+
+        $callable($userUuid, $socialData, $this->context);
+    }
 
     private function getTokenManager(): TokenManager
     {

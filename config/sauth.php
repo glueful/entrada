@@ -13,6 +13,15 @@ return [
     'auto_register' => true,  // Automatically create user accounts for new social logins
     'link_accounts' => true,  // Allow linking social accounts to existing users
     'sync_profile' => true,   // Sync profile data from social providers
+    'post_registration' => [
+        // Disabled by default; apps opt in explicitly.
+        'enabled' => false,
+        // Handler can be:
+        // - invokable class-string (resolved via app($context, ClassName::class))
+        // - any callable
+        // Signature: function (string $userUuid, array $socialData, ApplicationContext $context): void
+        'handler' => null,
+    ],
 
     /*
     |--------------------------------------------------------------------------

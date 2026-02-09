@@ -21,6 +21,8 @@ use Glueful\Http\Exceptions\HttpException;
  */
 class AppleAuthProvider extends AbstractSocialProvider
 {
+    public const PROVIDER = 'apple';
+
     /** @var string Client ID (Service ID) from Apple Developer Account */
     private string $clientId;
 
@@ -56,7 +58,7 @@ class AppleAuthProvider extends AbstractSocialProvider
         $this->httpClient =$this->context->getContainer()->get(Client::class);
 
         // Set provider name
-        $this->providerName = 'apple';
+        $this->providerName = self::PROVIDER;
 
         // Load configuration
         $this->loadConfig();

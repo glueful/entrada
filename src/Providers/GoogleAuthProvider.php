@@ -20,6 +20,8 @@ use Glueful\Http\Exceptions\HttpException;
  */
 class GoogleAuthProvider extends AbstractSocialProvider
 {
+    public const PROVIDER = 'google';
+
     /** @var string Client ID from Google API Console */
     private string $clientId;
 
@@ -46,7 +48,7 @@ class GoogleAuthProvider extends AbstractSocialProvider
         parent::__construct($context);
 
         // Set provider name
-        $this->providerName = 'google';
+        $this->providerName = self::PROVIDER;
 
         // Initialize HTTP client
         $this->httpClient = $this->context->getContainer()->get(Client::class);
