@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.4.1] - 2026-02-09
+
+### Fixed
+- **Controller DI Registration**: `SocialAuthController` and `SocialAccountController` were not registered in `EntradaServiceProvider::services()`, causing `Service 'Glueful\Extensions\Entrada\Controllers\SocialAuthController' not found` at runtime. Both controllers are now explicitly registered with their dependencies.
+
+### Notes
+- Patch release. No breaking changes.
+
 ## [1.4.0] - 2026-02-09
 
 ### Changed
