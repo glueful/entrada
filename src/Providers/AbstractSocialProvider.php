@@ -272,11 +272,19 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
                         throw new \RuntimeException('Failed to link social account');
                     }
                 }
-
-                $this->runPostRegistrationHandler($userUuid, $socialData);
             });
         } catch (\Throwable $e) {
             error_log("[{$this->providerName}] User creation failed: " . $e->getMessage());
+            $this->lastError = 'Failed to create user account';
+            return null;
+        }
+
+        // Run app-specific provisioning after commit so handlers that resolve
+        // their own DB connections can see the newly created user row.
+        try {
+            $this->runPostRegistrationHandler($userUuid, $socialData);
+        } catch (\Throwable $e) {
+            error_log("[{$this->providerName}] User provisioning failed: " . $e->getMessage());
             $this->lastError = 'Failed to create user account';
             return null;
         }

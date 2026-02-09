@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.6.1] - 2026-02-09
+
+### Fixed
+- **Post-registration handler FK violation**: Moved post-registration handler execution from inside the DB transaction to after commit. Handlers that resolve their own DB connections (e.g. Aegis `RoleService`) could not see the uncommitted user row, causing foreign key violations on `user_roles`. The transaction now covers only user insert and social account linking. The handler runs post-commit with its own error boundary.
+
+### Notes
+- Patch release. No breaking changes.
+- If the handler fails after commit, the user and social link are preserved. Handler failures are logged and prevent session creation, allowing for recovery.
+
+---
+
 ## [1.6.0] - 2026-02-09
 
 ### Added
