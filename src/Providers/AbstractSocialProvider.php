@@ -556,12 +556,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
 
         try {
             if (!empty($existing)) {
-                if (array_key_exists('updated_at', $columns)) {
-                    $update[(string)$columns['updated_at']] = $now;
-                }
-                $this->db->table($table)
-                    ->where($userUuidColumn, $userUuid)
-                    ->update($update);
+                // Profile already exists — user owns their data, don't overwrite
                 return;
             }
 
