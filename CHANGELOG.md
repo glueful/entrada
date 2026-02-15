@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.6.3] - 2026-02-15
+
+### Fixed
+- **Profile data preservation**: Social login no longer overwrites existing profile data (photo, name, etc.) on subsequent logins. Profile sync now only populates data on first registration; returning users retain full ownership of their profile.
+
+---
+
 ## [1.6.2] - 2026-02-09
 
 ### Changed
