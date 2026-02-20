@@ -14,6 +14,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.7.0] - 2026-02-20
+
+### Changed
+
+- **`AbstractSocialProvider::canHandleToken()` returns `false`**: Access JWTs are now provider-agnostic in the new session model. Provider routing for refresh comes from persisted session state, not JWT claims.
+- **`AbstractSocialProvider::validateToken()` uses signature verification**: Validates JWTs via `JWTService::verify()` instead of inspecting provider-specific claims, compatible with the minimal `sid`/`ver`/`jti` JWT model.
+- **`AbstractSocialProvider::refreshTokens()` passes provider via session data**: Injects provider name into `sessionDataOverride` for `TokenManager`, aligning with session-state-based provider dispatch.
+- **Framework compatibility**: Requires Glueful Framework `>=1.39.0` for the new token/session architecture.
+
+### Notes
+
+- No breaking changes to OAuth login, callback, or token refresh flows.
+- Provider identity continues to be determined by URL path (`/auth/social/{provider}`) and database state, not JWT claims.
+- All four providers (Google, Facebook, GitHub, Apple) inherit the updated base behavior without overrides.
+
+---
+
 ## [1.6.3] - 2026-02-15
 
 ### Fixed
