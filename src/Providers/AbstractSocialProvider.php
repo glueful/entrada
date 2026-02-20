@@ -71,16 +71,14 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
 
     public function validateToken(string $token): bool
     {
-        return $this->getTokenManager()->validateAccessToken($token);
+        return JWTService::verify($token);
     }
 
     public function canHandleToken(string $token): bool
     {
-        $decoded = JWTService::decode($token);
-        if (!$decoded) {
-            return false;
-        }
-        return isset($decoded['provider']) && $decoded['provider'] === $this->providerName;
+        // Access JWTs are intentionally provider-agnostic in the new session model.
+        // Provider routing for refresh comes from persisted session state.
+        return false;
     }
 
     public function generateTokens(
@@ -88,6 +86,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
         ?int $accessTokenLifetime = null,
         ?int $refreshTokenLifetime = null
     ): array {
+        
         $userData['provider'] = $this->providerName;
         return $this->getTokenManager()->generateTokenPair($userData, $accessTokenLifetime, $refreshTokenLifetime);
     }
@@ -629,5 +628,4 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
 
         return new TokenManager($this->context);
     }
-
 }
