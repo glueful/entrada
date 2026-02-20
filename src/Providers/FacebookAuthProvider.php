@@ -347,31 +347,7 @@ class FacebookAuthProvider extends AbstractSocialProvider
      */
     public function refreshTokens(string $refreshToken, array $sessionData): ?array
     {
-        try {
-            // For Facebook, we don't have a direct way to refresh tokens without user interaction
-            // Instead, we'll just generate new tokens based on the session data
-
-            // If the session contains the necessary user data
-            if (isset($sessionData['user']) && !empty($sessionData['user']['uuid'])) {
-                $userData = $sessionData['user'];
-
-                // Generate new tokens using standard method from parent
-                $accessTokenLifetime = (int)config($this->context, 'session.access_token_lifetime', 3600);
-                $refreshTokenLifetime = (int)config($this->context, 'session.refresh_token_lifetime', 604800);
-
-                return $this->generateTokens(
-                    $userData,
-                    $accessTokenLifetime,
-                    $refreshTokenLifetime
-                );
-            }
-
-            $this->lastError = "Insufficient session data for token refresh";
-            return null;
-        } catch (\Exception $e) {
-            $this->lastError = "Token refresh error: " . $e->getMessage();
-            return null;
-        }
+        return parent::refreshTokens($refreshToken, $sessionData);
     }
 
     /**
