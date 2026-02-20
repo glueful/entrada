@@ -14,6 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.7.1] - 2026-02-20
+
+### Fixed
+
+- **`AbstractSocialProvider::refreshTokens()` recursive refresh loop**: Replaced the intermediate provider refresh call with a direct `TokenManager::generateTokenPair()` invocation, eliminating the recursive call chain that could occur when the refresh flow re-entered the provider.
+- **`AbstractSocialProvider::generateTokens()` issues tokens directly**: Now calls `TokenManager::generateTokenPair()` with the provider name injected into `$userData`, removing unnecessary indirection.
+- **`FacebookAuthProvider::refreshTokens()` delegates to parent**: Removed custom refresh logic in favour of `parent::refreshTokens()` for consistent behavior across all providers.
+
+### Notes
+
+- Patch release. No breaking changes. All providers now follow a single, non-recursive token issuance path.
+
+---
+
 ## [1.7.0] - 2026-02-20
 
 ### Changed

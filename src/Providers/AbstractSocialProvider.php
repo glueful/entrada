@@ -93,10 +93,19 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
 
     public function refreshTokens(string $refreshToken, array $sessionData): ?array
     {
-        $sessionData['provider'] = $this->providerName;
         try {
-            return $this->getTokenManager()->refreshTokens($refreshToken, $this->providerName);
-        } catch (\Exception $e) {
+            $payload = $sessionData;
+            $payload['provider'] = $this->providerName;
+            $payload['refresh_token'] = $refreshToken;
+
+            if (!isset($payload['uuid']) || !is_string($payload['uuid']) || $payload['uuid'] === '') {
+                $this->lastError = 'Missing user uuid in session data';
+                return null;
+            }
+
+            // Avoid recursive provider refresh loops by issuing a fresh pair directly.
+            return $this->getTokenManager()->generateTokenPair($payload);
+        } catch (\Throwable $e) {
             $this->lastError = "Token refresh error: " . $e->getMessage();
             return null;
         }
