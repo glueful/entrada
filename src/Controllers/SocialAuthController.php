@@ -10,6 +10,7 @@ use Glueful\Extensions\Entrada\Providers\GoogleAuthProvider;
 use Glueful\Extensions\Entrada\Providers\FacebookAuthProvider;
 use Glueful\Extensions\Entrada\Providers\GithubAuthProvider;
 use Glueful\Extensions\Entrada\Providers\AppleAuthProvider;
+use Glueful\Extensions\Entrada\Providers\AbstractSocialProvider;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -85,8 +86,7 @@ class SocialAuthController
             $userData = $this->googleProvider->verifyNativeToken($idToken);
 
             if (!$userData) {
-                $error = $this->googleProvider->getError() ?: 'Failed to verify Google ID token';
-                return Response::unauthorized($error);
+                return $this->providerFailureResponse($this->googleProvider, 'Failed to verify Google ID token');
             }
 
             return Response::success(
@@ -110,8 +110,7 @@ class SocialAuthController
             $userData = $this->googleProvider->authenticate($request);
 
             if (!$userData) {
-                $error = $this->googleProvider->getError() ?: "Failed to authenticate with Google";
-                return Response::unauthorized($error);
+                return $this->providerFailureResponse($this->googleProvider, 'Failed to authenticate with Google');
             }
 
             return Response::success(
@@ -166,8 +165,7 @@ class SocialAuthController
             $userData = $this->facebookProvider->verifyNativeToken($accessToken);
 
             if (!$userData) {
-                $error = $this->facebookProvider->getError() ?: 'Failed to verify Facebook access token';
-                return Response::unauthorized($error);
+                return $this->providerFailureResponse($this->facebookProvider, 'Failed to verify Facebook access token');
             }
 
             return Response::success(
@@ -191,8 +189,7 @@ class SocialAuthController
             $userData = $this->facebookProvider->authenticate($request);
 
             if (!$userData) {
-                $error = $this->facebookProvider->getError() ?: "Failed to authenticate with Facebook";
-                return Response::unauthorized($error);
+                return $this->providerFailureResponse($this->facebookProvider, 'Failed to authenticate with Facebook');
             }
 
             return Response::success(
@@ -247,8 +244,7 @@ class SocialAuthController
             $userData = $this->githubProvider->verifyNativeToken($accessToken);
 
             if (!$userData) {
-                $error = $this->githubProvider->getError() ?: 'Failed to verify GitHub access token';
-                return Response::unauthorized($error);
+                return $this->providerFailureResponse($this->githubProvider, 'Failed to verify GitHub access token');
             }
 
             return Response::success(
@@ -272,8 +268,7 @@ class SocialAuthController
             $userData = $this->githubProvider->authenticate($request);
 
             if (!$userData) {
-                $error = $this->githubProvider->getError() ?: "Failed to authenticate with GitHub";
-                return Response::unauthorized($error);
+                return $this->providerFailureResponse($this->githubProvider, 'Failed to authenticate with GitHub');
             }
 
             return Response::success(
@@ -328,8 +323,7 @@ class SocialAuthController
             $userData = $this->appleProvider->verifyNativeToken($idToken);
 
             if (!$userData) {
-                $error = $this->appleProvider->getError() ?: 'Failed to verify Apple ID token';
-                return Response::unauthorized($error);
+                return $this->providerFailureResponse($this->appleProvider, 'Failed to verify Apple ID token');
             }
 
             return Response::success(
@@ -353,8 +347,7 @@ class SocialAuthController
             $userData = $this->appleProvider->authenticate($request);
 
             if (!$userData) {
-                $error = $this->appleProvider->getError() ?: "Failed to authenticate with Apple";
-                return Response::unauthorized($error);
+                return $this->providerFailureResponse($this->appleProvider, 'Failed to authenticate with Apple');
             }
 
             return Response::success(
@@ -407,6 +400,18 @@ class SocialAuthController
             'refresh_token' => $refreshToken,
             'user' => $this->formatUserResponse($oidcUser),
         ];
+    }
+
+    private function providerFailureResponse(AbstractSocialProvider $provider, string $fallbackMessage): Response
+    {
+        $error = $provider->getError() ?: $fallbackMessage;
+        $statusCode = $provider->getErrorStatusCode();
+
+        if ($statusCode === Response::HTTP_UNAUTHORIZED) {
+            return Response::unauthorized($error);
+        }
+
+        return Response::error($error, $statusCode);
     }
 
     /**
