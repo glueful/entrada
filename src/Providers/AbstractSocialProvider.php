@@ -24,6 +24,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
 {
     protected string $providerName;
     protected ?string $lastError = null;
+    protected int $lastErrorStatusCode = 401;
     protected UserRepository $userRepository;
     protected Connection $db;
     protected ApplicationContext $context;
@@ -48,6 +49,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
             }
         } catch (\Exception $e) {
             $this->lastError = "Authentication error: " . $e->getMessage();
+            $this->lastErrorStatusCode = 500;
             error_log("[{$this->providerName}] " . $this->lastError);
             return null;
         }
@@ -67,6 +69,11 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
     public function getError(): ?string
     {
         return $this->lastError;
+    }
+
+    public function getErrorStatusCode(): int
+    {
+        return $this->lastErrorStatusCode;
     }
 
     public function validateToken(string $token): bool
@@ -113,9 +120,13 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
 
     protected function findOrCreateUser(array $socialData): ?array
     {
+        $this->lastError = null;
+        $this->lastErrorStatusCode = 401;
+
         $socialId = (string)($this->extractSocialValue($socialData, 'uuid') ?? '');
         if ($socialId === '') {
             $this->lastError = 'Social profile is missing provider user id';
+            $this->lastErrorStatusCode = 400;
             return null;
         }
 
@@ -136,6 +147,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
                 $emailUserUuid = $this->userValue($emailUser, 'uuid');
                 if (!is_string($emailUserUuid) || $emailUserUuid === '') {
                     $this->lastError = 'Matched user is missing UUID';
+                    $this->lastErrorStatusCode = 500;
                     return null;
                 }
 
@@ -153,6 +165,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
         $config = config($this->context, 'sauth', []);
         if (!($config['auto_register'] ?? true)) {
             $this->lastError = "Auto-registration is disabled and no matching user found";
+            $this->lastErrorStatusCode = 403;
             return null;
         }
 
@@ -284,7 +297,13 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
         } catch (\Throwable $e) {
             error_log("[{$this->providerName}] User creation failed: " . $e->getMessage());
             $this->lastError = 'Failed to create user account';
+            $this->lastErrorStatusCode = 500;
             return null;
+        }
+
+        $createdUser = $this->findUserByUuid($userUuid);
+        if ($createdUser !== null) {
+            $this->syncUserProfileFromSocial($createdUser, $socialData);
         }
 
         // Run app-specific provisioning after commit so handlers that resolve
@@ -293,13 +312,12 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
             $this->runPostRegistrationHandler($userUuid, $socialData);
         } catch (\Throwable $e) {
             error_log("[{$this->providerName}] User provisioning failed: " . $e->getMessage());
-            $this->lastError = 'Failed to create user account';
+            $this->lastError = 'Failed to complete account setup';
+            $this->lastErrorStatusCode = 500;
             return null;
         }
 
-        $createdUser = $this->findUserByUuid($userUuid);
         if ($createdUser !== null) {
-            $this->syncUserProfileFromSocial($createdUser, $socialData);
             return $this->formatUserData($createdUser);
         }
 

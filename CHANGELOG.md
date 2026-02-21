@@ -14,6 +14,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.7.2] - 2026-02-21
+
+### Fixed
+
+- **Post-registration failure now returns 500 instead of 401**: When user row is created but `runPostRegistrationHandler()` fails, the API now returns status `500` with "Failed to complete account setup" instead of a misleading `401` / "Failed to create user account".
+- **`createUserFromSocial()` flow reordered**: Profile sync (`syncUserProfileFromSocial`) now runs before the post-registration handler, so profile data is persisted even if the handler fails.
+
+### Added
+
+- **`AbstractSocialProvider::$lastErrorStatusCode` property**: Tracks HTTP status codes by failure type — `400` (bad social payload), `401` (auth/token failures, default), `403` (auto-register disabled), `500` (user creation/provisioning failures).
+- **`AbstractSocialProvider::getErrorStatusCode()` method**: Exposes the error status code for controller consumption.
+- **`SocialAuthController::providerFailureResponse()` helper**: Maps provider error status codes to appropriate HTTP responses — `Response::unauthorized()` for 401, `Response::error()` with the actual status code for all other cases. Replaces hardcoded `Response::unauthorized()` across all 8 callback/native failure paths.
+
+### Notes
+
+- Patch release. No breaking changes to OAuth flows.
+- All four providers (Google, Facebook, GitHub, Apple) benefit from accurate error status codes without overrides.
+
+---
+
 ## [1.7.1] - 2026-02-20
 
 ### Fixed
