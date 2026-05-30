@@ -30,49 +30,40 @@ Entrada provides enterprise-grade OAuth/OIDC social authentication for the Gluef
 ```bash
 composer require glueful/entrada
 
-# Build the extensions cache after adding packages
-php glueful extensions:cache
-
-# Enable in development (writes to config/extensions.php)
-php glueful extensions:enable Entrada
+# Enable it — installing does not auto-load an extension; this adds the provider to
+# config/extensions.php's `enabled` list and recompiles the cache.
+php glueful extensions:enable entrada
 
 # Run migrations (if not auto-run)
 php glueful migrate run
 ```
 
+In production, manage the `enabled` list in config and run `php glueful extensions:cache` in your deploy step.
+
 Verify status and details:
 
 ```bash
 php glueful extensions:list
-php glueful extensions:info Entrada
-php glueful extensions:why Glueful\\Extensions\\Entrada\\Services\\EntradaServiceProvider
+php glueful extensions:info entrada
 ```
 
 ### Local Development Installation
 
-If you're working locally (without Composer), place the extension in `extensions/Entrada`, ensure `config/extensions.php` has `local_path` pointing to `extensions` (non‑prod).
+To develop the extension locally, register it as a Composer **path repository** in your app's `composer.json`, then require and enable it:
 
-Enable the provider for development (choose one):
+```jsonc
+// composer.json
+"repositories": [
+    { "type": "path", "url": "extensions/entrada", "options": { "symlink": true } }
+]
+```
 
-- CLI (recommended):
-  ```bash
-  php glueful extensions:enable Entrada
-  ```
+```bash
+composer require glueful/entrada:@dev
+php glueful extensions:enable entrada
+```
 
-- Manual `config/extensions.php` edit:
-  ```php
-  return [
-      'enabled' => [
-          // ... other providers
-          Glueful\\Extensions\\Entrada\\Services\\EntradaServiceProvider::class,
-      ],
-      'dev_only' => [
-          // Optionally keep Entrada dev-only
-      ],
-      'local_path' => env('APP_ENV') === 'production' ? null : 'extensions',
-      'scan_composer' => true,
-  ];
-  ```
+Entries in `config/extensions.php` are plain string FQCNs (no `::class`) — prefer `extensions:enable` over editing by hand.
 
 Run the migrations to create the necessary database tables:
 ```bash
@@ -92,8 +83,8 @@ Check status and details:
 
 ```bash
 php glueful extensions:list
-php glueful extensions:info Entrada
-php glueful extensions:why Glueful\\Extensions\\Entrada\\Services\\EntradaServiceProvider
+php glueful extensions:info entrada
+php glueful extensions:diagnose
 ```
 
 Post-install checklist:
