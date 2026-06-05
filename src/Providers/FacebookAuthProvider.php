@@ -399,9 +399,9 @@ class FacebookAuthProvider extends AbstractSocialProvider
      * Verify Facebook access token with Facebook's API
      *
      * @param string $accessToken Access token from Facebook
-     * @return array|null Token data if verified, null otherwise
+     * @return array Token data if verified (throws on any failure)
      */
-    private function verifyFacebookAccessToken(string $accessToken): ?array
+    private function verifyFacebookAccessToken(string $accessToken): array
     {
         // Facebook's debug token endpoint
         $debugTokenUrl = "https://graph.facebook.com/debug_token";

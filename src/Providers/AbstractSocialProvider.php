@@ -7,7 +7,7 @@ namespace Glueful\Extensions\Entrada\Providers;
 use Glueful\Bootstrap\ApplicationContext;
 use Symfony\Component\HttpFoundation\Request;
 use Glueful\Auth\Interfaces\AuthenticationProviderInterface;
-use Glueful\Repository\UserRepository;
+use Glueful\Auth\Contracts\UserProviderInterface;
 use Glueful\Auth\TokenManager;
 use Glueful\Auth\JWTService;
 use Glueful\Helpers\Utils;
@@ -25,14 +25,18 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
     protected string $providerName;
     protected ?string $lastError = null;
     protected int $lastErrorStatusCode = 401;
-    protected UserRepository $userRepository;
+    protected UserProviderInterface $users;
     protected Connection $db;
     protected ApplicationContext $context;
 
     public function __construct(ApplicationContext $context)
     {
         $this->context = $context;
-        $this->userRepository = new UserRepository(null, null, $context);
+        // Resolve the framework identity seam (bound by glueful/users; core NullUserProvider
+        // fallback). Used for read lookups; user CREATION uses the raw config-driven writes below,
+        // since the seam is read-only. The concrete Glueful\Repository\UserRepository was removed
+        // from the framework when the user store was extracted into glueful/users.
+        $this->users = $context->getContainer()->get(UserProviderInterface::class);
         $this->db = $context->getContainer()->get('database');
     }
 
