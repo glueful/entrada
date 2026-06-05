@@ -62,8 +62,8 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @summary Google OAuth Callback
      * @description Callback endpoint that processes the OAuth response from Google
      * @tag Social Authentication
-     * @param code query string true "Authorization code from Google"
-     * @param state query string true "State token for CSRF protection"
+     * @queryParam code:string="Authorization code from Google" {required}
+     * @queryParam state:string="State token for CSRF protection" {required}
      * @response 200 application/json "Successfully authenticated with Google" {
      *   access_token:string="JWT access token",
      *   token_type:string="Bearer",
@@ -131,8 +131,8 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @summary Facebook OAuth Callback
      * @description Callback endpoint that processes the OAuth response from Facebook
      * @tag Social Authentication
-     * @param code query string true "Authorization code from Facebook"
-     * @param state query string true "State token for CSRF protection"
+     * @queryParam code:string="Authorization code from Facebook" {required}
+     * @queryParam state:string="State token for CSRF protection" {required}
      * @response 200 application/json "Successfully authenticated with Facebook" {
      *   access_token:string="JWT access token",
      *   token_type:string="Bearer",
@@ -200,8 +200,8 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @summary GitHub OAuth Callback
      * @description Callback endpoint that processes the OAuth response from GitHub
      * @tag Social Authentication
-     * @param code query string true "Authorization code from GitHub"
-     * @param state query string true "State token for CSRF protection"
+     * @queryParam code:string="Authorization code from GitHub" {required}
+     * @queryParam state:string="State token for CSRF protection" {required}
      * @response 200 application/json "Successfully authenticated with GitHub" {
      *   access_token:string="JWT access token",
      *   token_type:string="Bearer",
@@ -326,7 +326,6 @@ $router->group(['prefix' => '/user/social-accounts', 'middleware' => ['auth']], 
      * @description Remove a social provider connection from the authenticated user
      * @tag Social Account Management
      * @requiresAuth true
-     * @param uuid path string true "UUID of the social account to unlink"
      * @response 200 application/json "Successfully unlinked social account" {
      *   status:string="success",
      *   message:string="Social account unlinked successfully"
