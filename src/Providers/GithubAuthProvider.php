@@ -420,7 +420,7 @@ class GithubAuthProvider extends AbstractSocialProvider
             $base = strtolower($socialData['login']);
 
             // Check if username exists
-            $existing = $this->userRepository->findByUsername($base);
+            $existing = $this->users->findByLogin($base);
 
             if (!$existing) {
                 return $base;
@@ -436,7 +436,7 @@ class GithubAuthProvider extends AbstractSocialProvider
             $base = strtolower($emailParts[0]);
 
             // Check if username exists
-            $existing = $this->userRepository->findByUsername($base);
+            $existing = $this->users->findByLogin($base);
             if (!$existing) {
                 return $base;
             }

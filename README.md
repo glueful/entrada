@@ -11,7 +11,7 @@ Entrada provides enterprise-grade OAuth/OIDC social authentication for the Gluef
 - ✅ **Enterprise Security** - CSRF protection, JWT validation, and secure token management
 - ✅ **Automatic User Management** - Registration, account linking, and profile synchronization
 - ✅ **Advanced Apple Integration** - Custom ASN.1 JWT parser and Sign In with Apple support
-- ✅ **Database Integration** - Social account associations with foreign key relationships
+- ✅ **Database Integration** - Social account associations via an indexed `user_uuid` reference (no cross-package FK)
 - ✅ **Comprehensive API** - RESTful endpoints with OpenAPI documentation
 - ✅ **Health Monitoring** - Built-in diagnostics and configuration validation
 - ✅ **Flexible Configuration** - Environment variables and runtime configuration
@@ -30,49 +30,40 @@ Entrada provides enterprise-grade OAuth/OIDC social authentication for the Gluef
 ```bash
 composer require glueful/entrada
 
-# Build the extensions cache after adding packages
-php glueful extensions:cache
-
-# Enable in development (writes to config/extensions.php)
-php glueful extensions:enable Entrada
+# Enable it — installing does not auto-load an extension; this adds the provider to
+# config/extensions.php's `enabled` list and recompiles the cache.
+php glueful extensions:enable entrada
 
 # Run migrations (if not auto-run)
 php glueful migrate run
 ```
 
+In production, manage the `enabled` list in config and run `php glueful extensions:cache` in your deploy step.
+
 Verify status and details:
 
 ```bash
 php glueful extensions:list
-php glueful extensions:info Entrada
-php glueful extensions:why Glueful\\Extensions\\Entrada\\Services\\EntradaServiceProvider
+php glueful extensions:info entrada
 ```
 
 ### Local Development Installation
 
-If you're working locally (without Composer), place the extension in `extensions/Entrada`, ensure `config/extensions.php` has `local_path` pointing to `extensions` (non‑prod).
+To develop the extension locally, register it as a Composer **path repository** in your app's `composer.json`, then require and enable it:
 
-Enable the provider for development (choose one):
+```jsonc
+// composer.json
+"repositories": [
+    { "type": "path", "url": "extensions/entrada", "options": { "symlink": true } }
+]
+```
 
-- CLI (recommended):
-  ```bash
-  php glueful extensions:enable Entrada
-  ```
+```bash
+composer require glueful/entrada:@dev
+php glueful extensions:enable entrada
+```
 
-- Manual `config/extensions.php` edit:
-  ```php
-  return [
-      'enabled' => [
-          // ... other providers
-          Glueful\\Extensions\\Entrada\\Services\\EntradaServiceProvider::class,
-      ],
-      'dev_only' => [
-          // Optionally keep Entrada dev-only
-      ],
-      'local_path' => env('APP_ENV') === 'production' ? null : 'extensions',
-      'scan_composer' => true,
-  ];
-  ```
+Entries in `config/extensions.php` are plain string FQCNs (no `::class`) — prefer `extensions:enable` over editing by hand.
 
 Run the migrations to create the necessary database tables:
 ```bash
@@ -92,8 +83,8 @@ Check status and details:
 
 ```bash
 php glueful extensions:list
-php glueful extensions:info Entrada
-php glueful extensions:why Glueful\\Extensions\\Entrada\\Services\\EntradaServiceProvider
+php glueful extensions:info entrada
+php glueful extensions:diagnose
 ```
 
 Post-install checklist:
@@ -412,17 +403,14 @@ if ($userData) {
 <?php
 
 use Glueful\Extensions\Entrada\Services\SocialAccountService;
-use Glueful\Repository\UserRepository;
 
 class UserSocialAccountController
 {
     private SocialAccountService $socialAccountService;
-    private UserRepository $userRepository;
 
     public function __construct()
     {
         $this->socialAccountService = container()->get(SocialAccountService::class);
-        $this->userRepository = container()->get(UserRepository::class);
     }
 
     /**
@@ -883,8 +871,9 @@ CREATE TABLE social_accounts (
     profile_data TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
-    FOREIGN KEY (user_uuid) REFERENCES users(uuid) ON DELETE CASCADE,
+
+    -- user_uuid is an indexed logical reference to users.uuid (owned by glueful/users);
+    -- no cross-package FK (Phase 5 decoupling — integrity enforced at the service layer)
     UNIQUE KEY unique_provider_social (provider, social_id),
     INDEX idx_user_uuid (user_uuid),
     INDEX idx_provider (provider)

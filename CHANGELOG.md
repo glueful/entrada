@@ -14,6 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.8.0] - 2026-06-05 — Framework 1.50 Compatibility
+
+### Fixed
+
+- **Social login no longer fatals against Framework 1.50.** `AbstractSocialProvider` depended on `Glueful\Repository\UserRepository`, which was **removed from the framework** when the user store was extracted into `glueful/users` — the provider constructor instantiated it, so every social login threw "class not found". It now resolves the framework's **`UserProviderInterface`** identity seam, and GitHub's username-collision checks use `findByLogin()`. User creation/linking still uses the existing config-driven writes (the seam is read-only).
+
+### Changed
+
+- **Dropped the cross-package FK** from `social_accounts.user_uuid` → `users(uuid)`. `user_uuid` is now an **indexed logical reference** (the `users` table is owned by `glueful/users`; Phase-5 decoupling disallows cross-package FKs — integrity is enforced at the service layer).
+- **Migrations register at `MigrationPriority::DEPENDENT`** with source `glueful/entrada` (previously a bare `loadMigrationsFrom()` with no priority/source — the old FK relied on migration ordering that was never guaranteed).
+- **Minimum framework raised to `glueful/framework >=1.50.1`** (`require-dev` pinned to `^1.50.1`); previously `>=1.39.0`.
+
+### Documentation
+
+- Updated `README.md` and the migration docblocks: removed the stale `Glueful\Repository\UserRepository` usage example and all "foreign key" wording (now "indexed user reference").
+
 ## [1.7.2] - 2026-02-21
 
 ### Fixed

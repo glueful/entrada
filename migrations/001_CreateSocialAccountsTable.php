@@ -14,7 +14,8 @@ use Glueful\Database\Schema\Interfaces\SchemaBuilderInterface;
  *
  * Database Design:
  * - Implements proper indexing with unique constraints
- * - Uses foreign key constraints for user relationships
+ * - Indexed logical reference to users.uuid (no cross-package FK — Phase 5 decoupling;
+ *   the users table is owned by glueful/users, so integrity is enforced at the service layer)
  * - Handles timestamps for creation and updates
  *
  * Security Features:
@@ -30,7 +31,7 @@ class CreateSocialAccountsTable implements MigrationInterface
      * Execute the migration
      *
      * Creates the social_accounts table with:
-     * - Primary and foreign keys
+     * - Primary key and indexes (incl. an indexed user_uuid reference)
      * - Unique constraints
      * - Timestamp tracking
      *
@@ -54,14 +55,9 @@ class CreateSocialAccountsTable implements MigrationInterface
 
             // Add indexes
             $table->unique('uuid');
-            $table->index('user_uuid');
+            $table->index('user_uuid'); // links to users.uuid (owned by glueful/users) — indexed, no
+                                        // cross-package FK (Phase 5 decoupling; integrity enforced at the service layer)
             $table->unique(['provider', 'social_id']); // Composite unique constraint
-
-            // Add foreign key
-            $table->foreign('user_uuid')
-                ->references('uuid')
-                ->on('users')
-                ->cascadeOnDelete();
         });
     }
 
@@ -69,7 +65,7 @@ class CreateSocialAccountsTable implements MigrationInterface
      * Reverse the migration
      *
      * Removes the social_accounts table:
-     * - Respects foreign key constraints
+     * - No cross-package constraints to consider (indexed reference only)
      * - Completely cleans up all data
      *
      * @param SchemaBuilderInterface $schema Database schema manager
