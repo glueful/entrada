@@ -11,7 +11,7 @@ Entrada provides enterprise-grade OAuth/OIDC social authentication for the Gluef
 - ✅ **Enterprise Security** - CSRF protection, JWT validation, and secure token management
 - ✅ **Automatic User Management** - Registration, account linking, and profile synchronization
 - ✅ **Advanced Apple Integration** - Custom ASN.1 JWT parser and Sign In with Apple support
-- ✅ **Database Integration** - Social account associations with foreign key relationships
+- ✅ **Database Integration** - Social account associations via an indexed `user_uuid` reference (no cross-package FK)
 - ✅ **Comprehensive API** - RESTful endpoints with OpenAPI documentation
 - ✅ **Health Monitoring** - Built-in diagnostics and configuration validation
 - ✅ **Flexible Configuration** - Environment variables and runtime configuration
@@ -403,17 +403,14 @@ if ($userData) {
 <?php
 
 use Glueful\Extensions\Entrada\Services\SocialAccountService;
-use Glueful\Repository\UserRepository;
 
 class UserSocialAccountController
 {
     private SocialAccountService $socialAccountService;
-    private UserRepository $userRepository;
 
     public function __construct()
     {
         $this->socialAccountService = container()->get(SocialAccountService::class);
-        $this->userRepository = container()->get(UserRepository::class);
     }
 
     /**
@@ -874,8 +871,9 @@ CREATE TABLE social_accounts (
     profile_data TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
-    FOREIGN KEY (user_uuid) REFERENCES users(uuid) ON DELETE CASCADE,
+
+    -- user_uuid is an indexed logical reference to users.uuid (owned by glueful/users);
+    -- no cross-package FK (Phase 5 decoupling — integrity enforced at the service layer)
     UNIQUE KEY unique_provider_social (provider, social_id),
     INDEX idx_user_uuid (user_uuid),
     INDEX idx_provider (provider)
