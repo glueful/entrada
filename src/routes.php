@@ -335,5 +335,5 @@ $router->group(['prefix' => '/user/social-accounts', 'middleware' => ['auth']], 
      * @response 500 "Server error unlinking social account"
      */
     $router->delete('/{uuid}', [SocialAccountController::class, 'destroy'])
-        ->middleware(['auth', 'rate_limit:10,60']);
+        ->middleware(['rate_limit:10,60']); // 'auth' is already applied by the group
 });

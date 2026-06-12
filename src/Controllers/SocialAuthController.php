@@ -165,7 +165,10 @@ class SocialAuthController
             $userData = $this->facebookProvider->verifyNativeToken($accessToken);
 
             if (!$userData) {
-                return $this->providerFailureResponse($this->facebookProvider, 'Failed to verify Facebook access token');
+                return $this->providerFailureResponse(
+                    $this->facebookProvider,
+                    'Failed to verify Facebook access token'
+                );
             }
 
             return Response::success(
@@ -371,10 +374,15 @@ class SocialAuthController
         }
 
         $sessionUser = $userData;
-        if (!isset($sessionUser['username']) || !is_string($sessionUser['username']) || trim($sessionUser['username']) === '') {
+        $username = $sessionUser['username'] ?? null;
+        if (!is_string($username) || trim($username) === '') {
             if (isset($sessionUser['name']) && is_string($sessionUser['name']) && trim($sessionUser['name']) !== '') {
                 $sessionUser['username'] = trim($sessionUser['name']);
-            } elseif (isset($sessionUser['email']) && is_string($sessionUser['email']) && trim($sessionUser['email']) !== '') {
+            } elseif (
+                isset($sessionUser['email'])
+                && is_string($sessionUser['email'])
+                && trim($sessionUser['email']) !== ''
+            ) {
                 $sessionUser['username'] = strstr($sessionUser['email'], '@', true) ?: $sessionUser['uuid'];
             } else {
                 $sessionUser['username'] = $sessionUser['uuid'];
@@ -404,14 +412,21 @@ class SocialAuthController
 
     private function providerFailureResponse(AbstractSocialProvider $provider, string $fallbackMessage): Response
     {
-        $error = $provider->getError() ?: $fallbackMessage;
+        // The provider's detailed error can embed raw upstream OAuth response bodies, so it is
+        // logged server-side only; the client receives the generic fallback message. The status
+        // code (set by the provider) is preserved.
+        $detail = $provider->getError();
+        if ($detail !== null && $detail !== '' && $detail !== $fallbackMessage) {
+            error_log('[entrada] ' . $fallbackMessage . ': ' . $detail);
+        }
+
         $statusCode = $provider->getErrorStatusCode();
 
         if ($statusCode === Response::HTTP_UNAUTHORIZED) {
-            return Response::unauthorized($error);
+            return Response::unauthorized($fallbackMessage);
         }
 
-        return Response::error($error, $statusCode);
+        return Response::error($fallbackMessage, $statusCode);
     }
 
     /**
