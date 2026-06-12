@@ -25,7 +25,9 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @tag Social Authentication
      * @response 302 "Redirects to Google's OAuth authorization page"
      */
-    $router->get('/google', [SocialAuthController::class, 'googleInit']);
+    $router->get('/google', [SocialAuthController::class, 'googleInit'])
+        ->rateLimit(20, 1)            // 20 requests / 60s, per-IP (default)
+        ->middleware(['rate_limit']); // attach the limiter so it reads the config above
 
     /**
      * @route POST /auth/social/google
@@ -55,7 +57,9 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @response 401 "Failed to verify Google ID token"
      * @response 500 "Server error during authentication"
      */
-    $router->post('/google', [SocialAuthController::class, 'googleNative']);
+    $router->post('/google', [SocialAuthController::class, 'googleNative'])
+        ->rateLimit(10, 1)            // 10 requests / 60s, per-IP — token-grinding surface
+        ->middleware(['rate_limit']);
 
     /**
      * @route GET /auth/social/google/callback
@@ -85,7 +89,9 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
      */
-    $router->get('/google/callback', [SocialAuthController::class, 'googleCallback']);
+    $router->get('/google/callback', [SocialAuthController::class, 'googleCallback'])
+        ->rateLimit(20, 1)            // 20 requests / 60s, per-IP
+        ->middleware(['rate_limit']);
 
     /**
      * @route GET /auth/social/facebook
@@ -94,7 +100,9 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @tag Social Authentication
      * @response 302 "Redirects to Facebook's OAuth authorization page"
      */
-    $router->get('/facebook', [SocialAuthController::class, 'facebookInit']);
+    $router->get('/facebook', [SocialAuthController::class, 'facebookInit'])
+        ->rateLimit(20, 1)            // 20 requests / 60s, per-IP (default)
+        ->middleware(['rate_limit']);
 
     /**
      * @route POST /auth/social/facebook
@@ -124,7 +132,9 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @response 401 "Failed to verify Facebook access token"
      * @response 500 "Server error during authentication"
      */
-    $router->post('/facebook', [SocialAuthController::class, 'facebookNative']);
+    $router->post('/facebook', [SocialAuthController::class, 'facebookNative'])
+        ->rateLimit(10, 1)            // 10 requests / 60s, per-IP — token-grinding surface
+        ->middleware(['rate_limit']);
 
     /**
      * @route GET /auth/social/facebook/callback
@@ -154,7 +164,9 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
      */
-    $router->get('/facebook/callback', [SocialAuthController::class, 'facebookCallback']);
+    $router->get('/facebook/callback', [SocialAuthController::class, 'facebookCallback'])
+        ->rateLimit(20, 1)            // 20 requests / 60s, per-IP
+        ->middleware(['rate_limit']);
 
     /**
      * @route GET /auth/social/github
@@ -163,7 +175,9 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @tag Social Authentication
      * @response 302 "Redirects to GitHub's OAuth authorization page"
      */
-    $router->get('/github', [SocialAuthController::class, 'githubInit']);
+    $router->get('/github', [SocialAuthController::class, 'githubInit'])
+        ->rateLimit(20, 1)            // 20 requests / 60s, per-IP (default)
+        ->middleware(['rate_limit']);
 
     /**
      * @route POST /auth/social/github
@@ -193,7 +207,9 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @response 401 "Failed to verify GitHub access token"
      * @response 500 "Server error during authentication"
      */
-    $router->post('/github', [SocialAuthController::class, 'githubNative']);
+    $router->post('/github', [SocialAuthController::class, 'githubNative'])
+        ->rateLimit(10, 1)            // 10 requests / 60s, per-IP — token-grinding surface
+        ->middleware(['rate_limit']);
 
     /**
      * @route GET /auth/social/github/callback
@@ -223,7 +239,9 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
      */
-    $router->get('/github/callback', [SocialAuthController::class, 'githubCallback']);
+    $router->get('/github/callback', [SocialAuthController::class, 'githubCallback'])
+        ->rateLimit(20, 1)            // 20 requests / 60s, per-IP
+        ->middleware(['rate_limit']);
 
     /**
      * @route GET /auth/social/apple
@@ -232,7 +250,9 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @tag Social Authentication
      * @response 302 "Redirects to Apple's OAuth authorization page"
      */
-    $router->get('/apple', [SocialAuthController::class, 'appleInit']);
+    $router->get('/apple', [SocialAuthController::class, 'appleInit'])
+        ->rateLimit(20, 1)            // 20 requests / 60s, per-IP (default)
+        ->middleware(['rate_limit']);
 
     /**
      * @route POST /auth/social/apple
@@ -262,7 +282,9 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @response 401 "Failed to verify Apple ID token"
      * @response 500 "Server error during authentication"
      */
-    $router->post('/apple', [SocialAuthController::class, 'appleNative']);
+    $router->post('/apple', [SocialAuthController::class, 'appleNative'])
+        ->rateLimit(10, 1)            // 10 requests / 60s, per-IP — token-grinding surface
+        ->middleware(['rate_limit']);
 
     /**
      * @route POST /auth/social/apple/callback
@@ -294,7 +316,9 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @response 400 "Bad request or invalid parameters"
      * @response 401 "Authentication failed"
      */
-    $router->post('/apple/callback', [SocialAuthController::class, 'appleCallback']);
+    $router->post('/apple/callback', [SocialAuthController::class, 'appleCallback'])
+        ->rateLimit(20, 1)            // 20 requests / 60s, per-IP — OAuth callback
+        ->middleware(['rate_limit']);
 });
 
 // User social accounts management (requires authentication)
@@ -335,5 +359,7 @@ $router->group(['prefix' => '/user/social-accounts', 'middleware' => ['auth']], 
      * @response 500 "Server error unlinking social account"
      */
     $router->delete('/{uuid}', [SocialAccountController::class, 'destroy'])
-        ->middleware(['rate_limit:10,60']); // 'auth' is already applied by the group
+        ->rateLimit(10, 1)            // 10 requests / 60s, per-IP ('auth' already applied by the group)
+        ->middleware(['rate_limit']); // builder sets the limit; middleware enforces it (the old
+                                      // 'rate_limit:10,60' string form was a NO-OP — params ignored)
 });
