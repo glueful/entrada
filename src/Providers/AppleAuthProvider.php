@@ -8,7 +8,6 @@ use Glueful\Bootstrap\ApplicationContext;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Glueful\Extensions\Entrada\Providers\AbstractSocialProvider;
-use Glueful\Auth\JWTService;
 use Glueful\Extensions\Entrada\Providers\ASN1Parser;
 use Glueful\Http\Client;
 use Glueful\Http\Exceptions\HttpException;
@@ -315,15 +314,21 @@ class AppleAuthProvider extends AbstractSocialProvider
      */
     private function generateClientSecret(): string
     {
-        // If client secret is already set and it's a valid JWT, use it
-        if (!empty($this->clientSecret) && strpos($this->clientSecret, '.') !== false) {
+        // If a pre-built client-secret JWT was supplied, use it verbatim. Detection is
+        // structural rather than "contains a dot": a `.p8` key-file path (e.g.
+        // /etc/keys/AuthKey_ABC.p8) also contains dots, so a substring test would misclassify
+        // it and ship the literal path to Apple. A JWT has exactly three non-empty base64url
+        // segments whose header decodes to JSON carrying an `alg` key — everything else falls
+        // through to the key-loading path below.
+        if ($this->looksLikeJwt($this->clientSecret)) {
             return $this->clientSecret;
         }
 
         // Private key from environment or file
         $privateKey = $this->clientSecret;
 
-        // If private key starts with a path, read the file
+        // If private key points at a file path, read the file. Checked before treating the
+        // value as inline PEM so a path is never mistaken for key material.
         if (strpos($privateKey, '/') === 0 && file_exists($privateKey)) {
             $contents = file_get_contents($privateKey);
             if ($contents === false) {
@@ -371,6 +376,43 @@ class AppleAuthProvider extends AbstractSocialProvider
     }
 
     /**
+     * Structurally test whether a value is a pre-built JWT (as opposed to a key-file path or
+     * inline PEM). A JWT has exactly three non-empty dot-separated base64url segments and its
+     * first segment base64url-decodes to a JSON object carrying an `alg` key. A `.p8` path or a
+     * PEM block fails this test, so it can never be mistaken for a client-secret JWT.
+     *
+     * @param string $value Candidate client secret
+     * @return bool True if the value is shaped like a JWT
+     */
+    private function looksLikeJwt(string $value): bool
+    {
+        if ($value === '') {
+            return false;
+        }
+
+        $parts = explode('.', $value);
+        if (count($parts) !== 3) {
+            return false;
+        }
+
+        foreach ($parts as $part) {
+            if ($part === '') {
+                return false;
+            }
+        }
+
+        try {
+            $headerJson = $this->base64UrlDecode($parts[0]);
+        } catch (\Exception) {
+            return false;
+        }
+
+        $header = json_decode($headerJson, true);
+
+        return is_array($header) && isset($header['alg']);
+    }
+
+    /**
      * Convert DER format signature to JOSE format
      *
      * @param string $der DER encoded signature from OpenSSL
@@ -378,7 +420,10 @@ class AppleAuthProvider extends AbstractSocialProvider
      */
     private function convertDERtoJOSE(string $der): string
     {
-        // Extract R and S values from DER format
+        // Extract R and S from the DER signature: a SEQUENCE wrapping two INTEGERs. Parse r and s
+        // from the SEQUENCE's *value* with a fresh parser — correct regardless of whether
+        // readObject() descends into or consumes a constructed element, and it bounds-checks the
+        // inner reads against the SEQUENCE body alone.
         $asn1 = new ASN1Parser($der);
         $seq = $asn1->readObject();
 
@@ -386,8 +431,9 @@ class AppleAuthProvider extends AbstractSocialProvider
             throw new \Exception('Invalid DER signature format');
         }
 
-        $r = $asn1->readObject();
-        $s = $asn1->readObject();
+        $inner = new ASN1Parser($seq['value']);
+        $r = $inner->readObject();
+        $s = $inner->readObject();
 
         if ($r['type'] !== 0x02 || $s['type'] !== 0x02) {
             throw new \Exception('Invalid DER signature values');
@@ -410,7 +456,11 @@ class AppleAuthProvider extends AbstractSocialProvider
      */
     private function convertToBinary(string $value, int $length): string
     {
-        // Remove leading zeros
+        // Strip the leading bytes a DER INTEGER carries that the fixed-width JOSE form does not:
+        // the 0x00 sign byte DER prepends when the top bit is set (to keep the integer positive),
+        // plus any other leading zeros. What remains is the minimal big-endian unsigned magnitude,
+        // which is exactly what JOSE r/s encode — they are fixed-width unsigned integers, so no
+        // sign byte is ever re-added.
         $value = ltrim($value, "\x00");
 
         // A zero component decodes to an empty string; return the zero-padded length.
@@ -418,40 +468,29 @@ class AppleAuthProvider extends AbstractSocialProvider
             return str_repeat("\x00", $length);
         }
 
-        // Handle negative numbers (remove leading 0xFF)
-        if (ord($value[0]) >= 0x80) {
-            $value = "\x00" . $value;
-        }
-
-        // Pad to desired length
-        $value = str_pad($value, $length, "\x00", STR_PAD_LEFT);
-
-        // Truncate if too long
+        // The magnitude must fit the fixed width. A longer value means the DER INTEGER was
+        // malformed (or this isn't a P-256 signature); silently truncating would forge a
+        // corrupt-but-well-formed client secret, so fail loudly instead.
         if (strlen($value) > $length) {
-            $value = substr($value, -$length);
+            throw new \RuntimeException(
+                "ECDSA signature component is " . strlen($value)
+                . " bytes, exceeds the {$length}-byte ES256 width"
+            );
         }
 
-        return $value;
+        // Left-pad the magnitude to the fixed width.
+        return str_pad($value, $length, "\x00", STR_PAD_LEFT);
     }
 
     /**
-     * Base64URL encode (using framework's JWTService if available)
+     * Base64URL encode.
      *
      * @param string $data Data to encode
      * @return string Base64URL encoded string
      */
     private function base64UrlEncode(string $data): string
     {
-        // Use reflection to access the private method in JWTService
-        try {
-            $reflection = new \ReflectionClass(JWTService::class);
-            $method = $reflection->getMethod('base64UrlEncode');
-
-            return $method->invoke(null, $data);
-        } catch (\ReflectionException $e) {
-            // Fallback implementation if reflection fails
-            return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
-        }
+        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
     }
 
     /**
