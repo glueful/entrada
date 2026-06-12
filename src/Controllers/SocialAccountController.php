@@ -69,6 +69,7 @@ class SocialAccountController
             $userUuid = $userData['uuid'];
 
             $account = $this->db->table('social_accounts')
+                ->select(['uuid'])
                 ->where([
                     'uuid' => $uuid,
                     'user_uuid' => $userUuid

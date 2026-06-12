@@ -55,9 +55,10 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
                 return null;
             }
         } catch (\Exception $e) {
+            // Record the failure on the provider; the controller's providerFailureResponse() is the
+            // single place that logs it (it has request context). Logging here too would double-log.
             $this->lastError = "Authentication error: " . $e->getMessage();
             $this->lastErrorStatusCode = 500;
-            error_log("[{$this->providerName}] " . $this->lastError);
             return null;
         }
 
@@ -236,18 +237,20 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
         array $userData
     ): bool {
         $existing = $this->db->table('social_accounts')
-            ->select(['*'])
+            ->select(['uuid'])
             ->where('user_uuid', $userUuid)
             ->where('provider', $provider)
             ->where('social_id', $socialId)
             ->limit(1)
             ->get();
 
+        $profileData = json_encode($this->filterProfileData($userData));
+
         if (!empty($existing)) {
             return $this->db->table('social_accounts')
                 ->where('uuid', $existing[0]['uuid'])
                 ->update([
-                    'profile_data' => json_encode($userData),
+                    'profile_data' => $profileData,
                     'updated_at' => date('Y-m-d H:i:s')
                 ]) > 0;
         }
@@ -257,11 +260,46 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
             'user_uuid' => $userUuid,
             'provider' => $provider,
             'social_id' => $socialId,
-            'profile_data' => json_encode($userData),
+            'profile_data' => $profileData,
             'created_at' => date('Y-m-d H:i:s')
         ]);
 
         return (bool)$result;
+    }
+
+    /**
+     * Reduce a provider profile payload to a fixed allowlist before it is persisted in
+     * `social_accounts.profile_data`.
+     *
+     * The raw provider response (under `raw`) and any unanticipated upstream fields are dropped:
+     * nothing in this extension reads `profile_data` back, so persisting the full payload only
+     * stores extra PII (locale, full picture URLs, future fields) with no benefit. Only a small,
+     * stable set of identity fields is kept for operator inspection/debugging.
+     *
+     * @param array<string, mixed> $userData
+     * @return array<string, mixed>
+     */
+    private function filterProfileData(array $userData): array
+    {
+        $allowed = [
+            'id',
+            'email',
+            'name',
+            'first_name',
+            'last_name',
+            'username',
+            'picture',
+            'email_verified',
+        ];
+
+        $filtered = [];
+        foreach ($allowed as $key) {
+            if (array_key_exists($key, $userData)) {
+                $filtered[$key] = $userData[$key];
+            }
+        }
+
+        return $filtered;
     }
 
     /**
