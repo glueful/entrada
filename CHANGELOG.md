@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Verified-email status now flows end to end.** Apple's `email_verified` claim stayed buried in the profile's `raw` payload while alias resolution reads top-level keys only — so the 1.9.0 verified-email linking gate rejected every Apple sign-in matching an existing local email with 409 (Apple emails are always verified — the gate permanently locked out the strictest provider), and new Apple users never got `email_verified_at` stamped. The claim is now promoted to a top-level profile key (raw value preserved; `isVerifiedFlag()` normalizes Apple's bool/string forms). `formatUserData()` also carries `email_verified` and the mapped `email_verified_at` timestamp from the persisted row, so session/OIDC claims report `email_verified: true` for verified users across all providers (previously always `false` — `TokenManager::createUserSession()` derives the OIDC flag from `email_verified_at`).
+
+### Security
+- **Google native-token verification fails closed and keeps the ID token out of URLs.** The tokeninfo audience check was `isset($aud) && $aud !== clientId` — a response missing `aud` skipped audience validation entirely; it now rejects missing/mismatched `aud` and additionally enforces a Google `iss` (`https://accounts.google.com` or `accounts.google.com`, previously unchecked). The tokeninfo call now POSTs the ID token in the form body instead of a GET query string, keeping tokens out of proxy/access/slow-request logs.
+- **Facebook Graph calls hardened.** The OAuth token exchange now POSTs `client_id`/`client_secret`/`code` in the request body instead of a GET query string (the other three providers already did); Graph profile requests now send `appsecret_proof` (HMAC-SHA256 of the access token), supporting apps with "Require App Secret" enabled and preventing replay of stolen tokens; and the Graph API version is configurable via `sauth.facebook.api_version` / `FACEBOOK_API_VERSION` (default `v21.0`, was hardcoded to the long-deprecated `v15.0`).
+- **All 12 public social-auth endpoints are now rate limited** (per-IP, sliding window): native token POSTs at 10/min (token-grinding surface), OAuth callbacks and init redirects at 20/min. The audit also revealed that the existing unlink route's `rate_limit:10,60` middleware-string form was a silent no-op — the framework's `EnhancedRateLimiterMiddleware` ignores string params and reads only the route's `->rateLimit()` builder config — so it enforced the tier/global default rather than 10/60. All limits (including unlink) now use the enforcing `->rateLimit(n, minutes)` + `->middleware(['rate_limit'])` pattern.
+
 ### Planned
 - Twitter/X OAuth integration
 - LinkedIn professional authentication

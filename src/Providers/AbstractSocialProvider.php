@@ -274,10 +274,26 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
         $email = $this->userValue($user, 'email');
         $name = $this->userValue($user, 'username');
 
+        // Carry the verified-email status forward from the persisted row. The column is resolved
+        // through the same storage-config mapping the rest of the class uses (storage.users.columns
+        // -> email_verified_at), so a non-null timestamp means the email is verified. A missing key
+        // fails closed to unverified. The raw timestamp is preserved under its mapped column name
+        // because the framework's TokenManager::createUserSession() derives the OIDC user's
+        // email_verified flag from email_verified_at (not from this bool), and that OIDC user is
+        // what SocialAuthController reports back to the client.
+        $emailVerifiedAt = $this->userValue($user, 'email_verified_at');
+        $emailVerified = $emailVerifiedAt !== null && $emailVerifiedAt !== '';
+
+        $userConfig = $this->getStorageConfig('users');
+        $columns = is_array($userConfig['columns'] ?? null) ? $userConfig['columns'] : [];
+        $emailVerifiedAtColumn = (string)($columns['email_verified_at'] ?? 'email_verified_at');
+
         return [
             'uuid' => $uuid,
             'email' => $email,
             'name' => $name,
+            'email_verified' => $emailVerified,
+            $emailVerifiedAtColumn => $emailVerifiedAt,
             'roles' => $user['roles'] ?? [],
         ];
     }
@@ -492,7 +508,7 @@ abstract class AbstractSocialProvider implements AuthenticationProviderInterface
     /**
      * @return array<string, mixed>
      */
-    private function getSauthConfig(): array
+    protected function getSauthConfig(): array
     {
         $config = config($this->context, 'sauth', []);
         return is_array($config) ? $config : [];

@@ -466,7 +466,7 @@ class AppleAuthProvider extends AbstractSocialProvider
      * @return array<string, mixed> User profile data
      * @throws \Exception If the token signature or claims are invalid
      */
-    private function extractUserProfile(string $idToken, ?array $userData = null): array
+    protected function extractUserProfile(string $idToken, ?array $userData = null): array
     {
         $payload = $this->verifyAndDecodeIdToken($idToken);
 
@@ -474,6 +474,12 @@ class AppleAuthProvider extends AbstractSocialProvider
         $profile = [
             'id' => $payload['sub'] ?? null,
             'email' => $payload['email'] ?? null,
+            // Promote the verified-email claim to a top-level key so the canonical alias
+            // resolution in AbstractSocialProvider::extractSocialValue() (which only inspects
+            // top-level keys) can see it. Apple sends this as bool true OR the string "true";
+            // pass the raw claim through unchanged — isVerifiedFlag() normalizes both, and
+            // coercing here would lose the distinction it relies on.
+            'email_verified' => $payload['email_verified'] ?? false,
             'name' => null,
             'first_name' => null,
             'last_name' => null,
@@ -531,7 +537,7 @@ class AppleAuthProvider extends AbstractSocialProvider
      * @return array<string, mixed> Verified token claims
      * @throws \Exception If the JWKS cannot be fetched or verification fails
      */
-    private function verifyAndDecodeIdToken(string $idToken): array
+    protected function verifyAndDecodeIdToken(string $idToken): array
     {
         $jwks = $this->fetchAppleJwks();
 
