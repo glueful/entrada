@@ -8,9 +8,9 @@ Entrada provides enterprise-grade OAuth/OIDC social authentication for the Gluef
 
 - ✅ **Multi-Platform Support** - Google, Facebook, GitHub, and Apple Sign In
 - ✅ **Dual Authentication Flows** - Web OAuth redirects and native mobile token verification
-- ✅ **Enterprise Security** - CSRF protection, JWT validation, and secure token management
-- ✅ **Automatic User Management** - Registration, account linking, and profile synchronization
-- ✅ **Advanced Apple Integration** - Custom ASN.1 JWT parser and Sign In with Apple support
+- ✅ **Security** - OAuth `state` CSRF protection, cryptographic Apple ID-token verification (JWKS / RS256), and verified-email-gated account linking
+- ✅ **Automatic User Management** - Registration, verified-email account linking, and profile synchronization
+- ✅ **Sign in with Apple** - JWKS-based ID-token signature verification and ES256 client-secret generation
 - ✅ **Database Integration** - Social account associations via an indexed `user_uuid` reference (no cross-package FK)
 - ✅ **Comprehensive API** - RESTful endpoints with OpenAPI documentation
 - ✅ **Health Monitoring** - Built-in diagnostics and configuration validation
@@ -19,7 +19,7 @@ Entrada provides enterprise-grade OAuth/OIDC social authentication for the Gluef
 ## Requirements
 
 - PHP 8.3 or higher
-- Glueful Framework 1.22.0 or higher
+- Glueful Framework 1.50.2 or higher
 - cURL PHP extension
 - OpenSSL PHP extension (for Apple Sign In)
 
@@ -387,8 +387,9 @@ $facebookProvider = container()->get(FacebookAuthProvider::class);
 $githubProvider = container()->get(GithubAuthProvider::class);
 $appleProvider = container()->get(AppleAuthProvider::class);
 
-// Verify a native mobile token (Google example)
-$userData = $googleProvider->verifyNativeToken($idToken, $accessToken);
+// Verify a native mobile token. Google/Apple take the ID token; Facebook/GitHub take the
+// access token. Each provider's verifyNativeToken() takes a single string argument.
+$userData = $googleProvider->verifyNativeToken($idToken);
 
 if ($userData) {
     // User authenticated successfully
@@ -483,25 +484,17 @@ class CustomAuthService
             throw new \InvalidArgumentException("Unknown provider: {$provider}");
         }
 
-        // Verify tokens based on provider
+        // Verify tokens based on provider. verifyNativeToken() takes one argument: the ID token
+        // for Google/Apple, the access token for Facebook/GitHub.
         switch ($provider) {
             case 'google':
-                $userData = $authProvider->verifyNativeToken(
-                    $tokens['id_token'] ?? '',
-                    $tokens['access_token'] ?? null
-                );
+            case 'apple':
+                $userData = $authProvider->verifyNativeToken($tokens['id_token'] ?? '');
                 break;
 
             case 'facebook':
-                $userData = $authProvider->verifyAccessToken(
-                    $tokens['access_token']
-                );
-                break;
-
-            case 'apple':
-                $userData = $authProvider->verifyIdToken(
-                    $tokens['id_token']
-                );
+            case 'github':
+                $userData = $authProvider->verifyNativeToken($tokens['access_token'] ?? '');
                 break;
 
             default:
@@ -839,17 +832,17 @@ Automatically sync user profiles from social providers:
 
 The extension includes advanced Apple Sign In support:
 
-#### Custom ASN.1 Parser
+#### ID-token signature verification
 
-Validates Apple's JWT signatures using a custom ASN.1 parser:
+Apple ID tokens are verified cryptographically before any claim is trusted: the RSA public key
+is reconstructed from Apple's JWKS (`https://appleid.apple.com/auth/keys`), the RS256 signature
+over the token is checked with `openssl_verify`, the algorithm is pinned to `RS256` (rejecting
+`alg: none` and RS/HS confusion), and `iss`/`aud`/`exp` are asserted. This happens automatically
+inside `verifyNativeToken()` and the web callback — both share one verified-claims path; callers
+never decode an unverified token themselves.
 
-```php
-use Glueful\Extensions\Entrada\Providers\ASN1Parser;
-
-// Automatic JWT validation with Apple's public keys
-$parser = new ASN1Parser();
-$isValid = $parser->validateAppleIdToken($idToken);
-```
+The bundled `ASN1Parser` is a small DER reader used when **generating** the Apple client-secret
+JWT (ES256 signing), not for ID-token validation.
 
 #### Apple-Specific Considerations
 
@@ -884,13 +877,11 @@ CREATE TABLE social_accounts (
 
 ### CSRF Protection
 
-State parameter validation prevents CSRF attacks:
-
-```php
-// Automatic state generation and validation
-$state = bin2hex(random_bytes(16));
-// State is verified on OAuth callback
-```
+Every OAuth flow is protected by a `state` parameter. A per-provider token is generated and stored
+in the session when the flow is initiated, then validated on the callback: it is compared with
+`hash_equals()`, is single-use (cleared on every callback), and a missing or mismatched value
+rejects the callback with a 401 before any authorization code is exchanged. This is automatic — no
+caller action is required.
 
 ### JWT Token Management
 
@@ -948,8 +939,8 @@ $tokens = $this->tokenManager->generateTokenPair($userUuid, [
 ```php
 // Advanced Apple Sign In implementation
 - OAuth 2.0 with Sign In with Apple
-- Custom JWT validation with ASN.1 parsing
-- Private key JWT generation for client secrets
+- ID-token signature verification via Apple's JWKS (RS256 / openssl)
+- ES256 private-key JWT generation for client secrets (DER via ASN1Parser)
 - First-time user data handling
 ```
 
