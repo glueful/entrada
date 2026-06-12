@@ -32,7 +32,7 @@ class GithubAuthProvider extends AbstractSocialProvider
     /** @var string Redirect URI for GitHub OAuth callback */
     private string $redirectUri;
 
-    /** @var array OAuth scopes requested */
+    /** @var array<int, string> OAuth scopes requested */
     private array $scopes = ['user:email', 'read:user'];
 
     /** @var Client HTTP client instance */
@@ -48,8 +48,8 @@ class GithubAuthProvider extends AbstractSocialProvider
         // Set provider name
         $this->providerName = self::PROVIDER;
 
-            // Initialize HTTP client
-        $this->httpClient =$this->context->getContainer()->get(Client::class);
+        // Initialize HTTP client
+        $this->httpClient = $this->context->getContainer()->get(Client::class);
 
         // Load configuration
         $this->loadConfig();
@@ -82,26 +82,7 @@ class GithubAuthProvider extends AbstractSocialProvider
 
         $this->redirectUri = !empty($config['github']['redirect_uri']) ?
                              $config['github']['redirect_uri'] :
-                             (getenv('GITHUB_REDIRECT_URI') ?: $this->getDefaultRedirectUri());
-    }
-
-    /**
-     * Generate default redirect URI based on current host
-     *
-     * @return string Default redirect URI
-     */
-    private function getDefaultRedirectUri(): string
-    {
-        // Get base URL from config
-        $baseUrl = config($this->context, 'app.url', '');
-
-        if (empty($baseUrl) && isset($_SERVER['HTTP_HOST'])) {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ||
-                         $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
-            $baseUrl = $protocol . $_SERVER['HTTP_HOST'];
-        }
-
-        return $baseUrl . '/auth/social/github/callback';
+                             (getenv('GITHUB_REDIRECT_URI') ?: $this->defaultCallbackUri());
     }
 
     /**
@@ -137,13 +118,20 @@ class GithubAuthProvider extends AbstractSocialProvider
      * and retrieve user information.
      *
      * @param Request $request The HTTP request
-     * @return array|null User data if authenticated, null otherwise
+     * @return array<string, mixed>|null User data if authenticated, null otherwise
      */
     protected function handleCallback(Request $request): ?array
     {
         // Validate configuration
         if (empty($this->clientId) || empty($this->clientSecret)) {
             $this->lastError = "GitHub OAuth configuration is missing";
+            return null;
+        }
+
+        // Validate the CSRF state parameter (fail closed) before doing any work.
+        if (!$this->validateOAuthState($request)) {
+            $this->lastError = "Invalid or missing OAuth state parameter";
+            $this->lastErrorStatusCode = 401;
             return null;
         }
 
@@ -173,31 +161,9 @@ class GithubAuthProvider extends AbstractSocialProvider
                 return null;
             }
 
-            // If email is not public, fetch email separately
-            if (empty($userProfile['email'])) {
-                $emails = $this->getUserEmails($tokenData['access_token']);
-                if (!empty($emails)) {
-                    // Find primary and verified email
-                    foreach ($emails as $email) {
-                        if ($email['primary'] && $email['verified']) {
-                            $userProfile['email'] = $email['email'];
-                            $userProfile['verified_email'] = true;
-                            break;
-                        }
-                    }
-
-                    // If no primary+verified found, use the first verified
-                    if (empty($userProfile['email'])) {
-                        foreach ($emails as $email) {
-                            if ($email['verified']) {
-                                $userProfile['email'] = $email['email'];
-                                $userProfile['verified_email'] = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+            // Resolve a verified email authoritatively from /user/emails (the public profile
+            // email's verification status is not exposed by the profile API).
+            $userProfile = $this->resolveVerifiedEmail($userProfile, $tokenData['access_token']);
 
             // Find or create user from GitHub data
             return $this->findOrCreateUser($userProfile);
@@ -222,14 +188,9 @@ class GithubAuthProvider extends AbstractSocialProvider
             throw new \RuntimeException("GitHub OAuth configuration is missing");
         }
 
-        // Generate state token to prevent CSRF
-        $state = bin2hex(random_bytes(16));
-
-        // Store state in session
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            session_start();
-        }
-        $_SESSION['github_oauth_state'] = $state;
+        // Generate and persist a CSRF state token (validated on callback). GitHub OAuth Apps do
+        // not support PKCE, so the code flow relies on state for request binding.
+        $state = $this->storeOAuthState();
 
         // Build authorization URL
         $authUrl = 'https://github.com/login/oauth/authorize';
@@ -252,7 +213,7 @@ class GithubAuthProvider extends AbstractSocialProvider
      * Exchange authorization code for access token
      *
      * @param string $code Authorization code from GitHub
-     * @return array Token data
+     * @return array<string, mixed> Token data
      */
     private function exchangeCodeForToken(string $code): array
     {
@@ -303,7 +264,7 @@ class GithubAuthProvider extends AbstractSocialProvider
      * Get user profile from GitHub
      *
      * @param string $accessToken Access token from GitHub
-     * @return array User profile data
+     * @return array<string, mixed> User profile data
      */
     private function getUserProfile(string $accessToken): array
     {
@@ -353,9 +314,56 @@ class GithubAuthProvider extends AbstractSocialProvider
             'location' => $userProfile['location'] ?? null,
             'company' => $userProfile['company'] ?? null,
             'blog' => $userProfile['blog'] ?? null,
-            'verified_email' => !empty($userProfile['email']), // Public email is verified
+            // The profile API does not report whether the public email is verified, so never
+            // assume it is. Verification is resolved authoritatively from /user/emails
+            // (see resolveVerifiedEmail()); until then the email is treated as unverified.
+            'verified_email' => false,
             'raw' => $userProfile
         ];
+    }
+
+    /**
+     * Resolve the GitHub account's email and verification status authoritatively from
+     * /user/emails. The profile API does not expose whether the public email is verified, so it
+     * is never assumed verified: only an email GitHub reports as verified (primary preferred)
+     * sets `verified_email = true`; otherwise the existing email is left unverified.
+     *
+     * @param array<string, mixed> $userProfile
+     * @return array<string, mixed>
+     */
+    private function resolveVerifiedEmail(array $userProfile, string $accessToken): array
+    {
+        $emails = $this->getUserEmails($accessToken);
+        if (empty($emails)) {
+            return $userProfile;
+        }
+
+        $verifiedEmail = null;
+
+        // Prefer the primary verified email.
+        foreach ($emails as $email) {
+            if (!empty($email['primary']) && !empty($email['verified'])) {
+                $verifiedEmail = $email['email'];
+                break;
+            }
+        }
+
+        // Otherwise fall back to the first verified email.
+        if ($verifiedEmail === null) {
+            foreach ($emails as $email) {
+                if (!empty($email['verified'])) {
+                    $verifiedEmail = $email['email'];
+                    break;
+                }
+            }
+        }
+
+        if ($verifiedEmail !== null) {
+            $userProfile['email'] = $verifiedEmail;
+            $userProfile['verified_email'] = true;
+        }
+
+        return $userProfile;
     }
 
     /**
@@ -365,7 +373,7 @@ class GithubAuthProvider extends AbstractSocialProvider
      * so we need to fetch it separately with the user:email scope.
      *
      * @param string $accessToken Access token from GitHub
-     * @return array List of user emails
+     * @return array<int, array<string, mixed>> List of user emails
      */
     private function getUserEmails(string $accessToken): array
     {
@@ -410,7 +418,7 @@ class GithubAuthProvider extends AbstractSocialProvider
      *
      * Overrides the parent method to use GitHub-specific fields.
      *
-     * @param array $socialData Social provider data
+     * @param array<string, mixed> $socialData Social provider data
      * @return string Generated username
      */
     protected function generateUsername(array $socialData): string
@@ -453,7 +461,7 @@ class GithubAuthProvider extends AbstractSocialProvider
      * Verify a token from a native mobile SDK
      *
      * @param string $accessToken Access token from GitHub OAuth
-     * @return array|null User data if verified, null otherwise
+     * @return array<string, mixed>|null User data if verified, null otherwise
      */
     public function verifyNativeToken(string $accessToken): ?array
     {
@@ -472,31 +480,9 @@ class GithubAuthProvider extends AbstractSocialProvider
                 return null;
             }
 
-            // If email is not public, fetch email separately
-            if (empty($userProfile['email'])) {
-                $emails = $this->getUserEmails($accessToken);
-                if (!empty($emails)) {
-                    // Find primary and verified email
-                    foreach ($emails as $email) {
-                        if ($email['primary'] && $email['verified']) {
-                            $userProfile['email'] = $email['email'];
-                            $userProfile['verified_email'] = true;
-                            break;
-                        }
-                    }
-
-                    // If no primary+verified found, use the first verified
-                    if (empty($userProfile['email'])) {
-                        foreach ($emails as $email) {
-                            if ($email['verified']) {
-                                $userProfile['email'] = $email['email'];
-                                $userProfile['verified_email'] = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+            // Resolve a verified email authoritatively from /user/emails (the public profile
+            // email's verification status is not exposed by the profile API).
+            $userProfile = $this->resolveVerifiedEmail($userProfile, $accessToken);
 
             // Find or create user from GitHub data
             return $this->findOrCreateUser($userProfile);

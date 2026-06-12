@@ -27,8 +27,15 @@ class EntradaServiceProvider extends ServiceProvider
     {
         if (self::$cachedVersion === null) {
             $path = __DIR__ . '/../../composer.json';
-            $composer = json_decode(file_get_contents($path), true);
-            self::$cachedVersion = $composer['version'] ?? '0.0.0';
+            $raw = file_get_contents($path);
+            $composer = is_string($raw) ? json_decode($raw, true) : null;
+            $composer = is_array($composer) ? $composer : [];
+            $extra = is_array($composer['extra'] ?? null) ? $composer['extra'] : [];
+            $glueful = is_array($extra['glueful'] ?? null) ? $extra['glueful'] : [];
+            // Canonical version lives under extra.glueful.version (library package, no top-level
+            // "version" key); fall back to a top-level key then a sentinel.
+            $version = $glueful['version'] ?? $composer['version'] ?? '0.0.0';
+            self::$cachedVersion = is_string($version) ? $version : '0.0.0';
         }
 
         return self::$cachedVersion;
@@ -38,7 +45,9 @@ class EntradaServiceProvider extends ServiceProvider
     {
         return [
             GoogleAuthProvider::class => ['class' => GoogleAuthProvider::class, 'shared' => true, 'autowire' => true],
-            FacebookAuthProvider::class => ['class' => FacebookAuthProvider::class, 'shared' => true, 'autowire' => true],
+            FacebookAuthProvider::class => [
+                'class' => FacebookAuthProvider::class, 'shared' => true, 'autowire' => true,
+            ],
             GithubAuthProvider::class => ['class' => GithubAuthProvider::class, 'shared' => true, 'autowire' => true],
             AppleAuthProvider::class => ['class' => AppleAuthProvider::class, 'shared' => true, 'autowire' => true],
             SocialAuthController::class => [
@@ -52,7 +61,9 @@ class EntradaServiceProvider extends ServiceProvider
                     '@' . TokenManager::class,
                 ],
             ],
-            SocialAccountController::class => ['class' => SocialAccountController::class, 'shared' => true, 'autowire' => true],
+            SocialAccountController::class => [
+                'class' => SocialAccountController::class, 'shared' => true, 'autowire' => true,
+            ],
         ];
     }
 

@@ -12,6 +12,7 @@ use Glueful\Auth\JWTService;
 use Glueful\Extensions\Entrada\Providers\ASN1Parser;
 use Glueful\Http\Client;
 use Glueful\Http\Exceptions\HttpException;
+
 /**
  * Apple Authentication Provider
  *
@@ -38,7 +39,7 @@ class AppleAuthProvider extends AbstractSocialProvider
     /** @var string Redirect URI for Apple OAuth callback */
     private string $redirectUri;
 
-    /** @var array OAuth scopes requested */
+    /** @var array<int, string> OAuth scopes requested */
     private array $scopes = [
         'name',
         'email'
@@ -55,7 +56,7 @@ class AppleAuthProvider extends AbstractSocialProvider
         parent::__construct($context);
 
         // Initialize HTTP client
-        $this->httpClient =$this->context->getContainer()->get(Client::class);
+        $this->httpClient = $this->context->getContainer()->get(Client::class);
 
         // Set provider name
         $this->providerName = self::PROVIDER;
@@ -99,26 +100,7 @@ class AppleAuthProvider extends AbstractSocialProvider
 
         $this->redirectUri = !empty($config['apple']['redirect_uri']) ?
                              $config['apple']['redirect_uri'] :
-                             (getenv('APPLE_REDIRECT_URI') ?: $this->getDefaultRedirectUri());
-    }
-
-    /**
-     * Generate default redirect URI based on current host
-     *
-     * @return string Default redirect URI
-     */
-    private function getDefaultRedirectUri(): string
-    {
-        // Get base URL from config
-        $baseUrl = config($this->context, 'app.url', '');
-
-        if (empty($baseUrl) && isset($_SERVER['HTTP_HOST'])) {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ||
-                         $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
-            $baseUrl = $protocol . $_SERVER['HTTP_HOST'];
-        }
-
-        return $baseUrl . '/auth/social/apple/callback';
+                             (getenv('APPLE_REDIRECT_URI') ?: $this->defaultCallbackUri());
     }
 
     /**
@@ -154,7 +136,7 @@ class AppleAuthProvider extends AbstractSocialProvider
      * and retrieve user information.
      *
      * @param Request $request The HTTP request
-     * @return array|null User data if authenticated, null otherwise
+     * @return array<string, mixed>|null User data if authenticated, null otherwise
      */
     protected function handleCallback(Request $request): ?array
     {
@@ -164,10 +146,18 @@ class AppleAuthProvider extends AbstractSocialProvider
             return null;
         }
 
-        // Get authorization code from request
-        $code = $request->request->get('code') ?? $request->query->get('code');
+        // Validate the CSRF state parameter (fail closed) before doing any work.
+        // Apple uses response_mode=form_post, so state arrives in the POST body.
+        if (!$this->validateOAuthState($request)) {
+            $this->lastError = "Invalid or missing OAuth state parameter";
+            $this->lastErrorStatusCode = 401;
+            return null;
+        }
 
-        if (empty($code)) {
+        // Get authorization code from request
+        $code = (string) ($request->request->get('code') ?? $request->query->get('code') ?? '');
+
+        if ($code === '') {
             $this->lastError = "Authorization code missing from request";
             return null;
         }
@@ -175,8 +165,9 @@ class AppleAuthProvider extends AbstractSocialProvider
         // Apple returns user info only on the first login, so we need to check for it
         $userData = null;
         if ($request->request->has('user')) {
-            $userDataJson = $request->request->get('user');
-            $userData = json_decode($userDataJson, true);
+            $userDataJson = (string) $request->request->get('user');
+            $decodedUser = json_decode($userDataJson, true);
+            $userData = is_array($decodedUser) ? $decodedUser : null;
         }
 
         try {
@@ -189,11 +180,21 @@ class AppleAuthProvider extends AbstractSocialProvider
                 return null;
             }
 
-            // Extract user information from ID token
+            // Extract user information from the verified ID token (signature + claims checked).
             $userProfile = $this->extractUserProfile($tokenData['id_token'], $userData);
 
             if (!isset($userProfile['id'])) {
                 $this->lastError = "Failed to get user profile";
+                return null;
+            }
+
+            // Bind the id_token to this authorization request via the OIDC nonce (the verified
+            // claims are available under 'raw'). Only enforced on the web flow, where we issued
+            // the nonce — the native SDK flow has no server-stored nonce.
+            $claims = is_array($userProfile['raw'] ?? null) ? $userProfile['raw'] : [];
+            if (!$this->validateNonce($claims['nonce'] ?? null)) {
+                $this->lastError = "Invalid or missing OAuth nonce";
+                $this->lastErrorStatusCode = 401;
                 return null;
             }
 
@@ -220,14 +221,12 @@ class AppleAuthProvider extends AbstractSocialProvider
             throw new \RuntimeException("Apple OAuth configuration is missing");
         }
 
-        // Generate state token to prevent CSRF
-        $state = bin2hex(random_bytes(16));
-
-        // Store state in session
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            session_start();
-        }
-        $_SESSION['apple_oauth_state'] = $state;
+        // Generate and persist a CSRF state token (validated on callback), a PKCE challenge
+        // (verifier sent on the token exchange), and an OIDC nonce (echoed in the id_token and
+        // validated after its signature is verified).
+        $state = $this->storeOAuthState();
+        $codeChallenge = $this->startPkce();
+        $nonce = $this->startNonce();
 
         // Build authorization URL
         $authUrl = 'https://appleid.apple.com/auth/authorize';
@@ -237,7 +236,10 @@ class AppleAuthProvider extends AbstractSocialProvider
             'response_type' => 'code',
             'state' => $state,
             'scope' => implode(' ', $this->scopes),
-            'response_mode' => 'form_post'
+            'response_mode' => 'form_post',
+            'code_challenge' => $codeChallenge,
+            'code_challenge_method' => 'S256',
+            'nonce' => $nonce,
         ];
 
         $authUrl .= '?' . http_build_query($params);
@@ -252,7 +254,7 @@ class AppleAuthProvider extends AbstractSocialProvider
      * Exchange authorization code for access token
      *
      * @param string $code Authorization code from Apple
-     * @return array Token data
+     * @return array<string, mixed> Token data
      */
     private function exchangeCodeForToken(string $code): array
     {
@@ -270,6 +272,12 @@ class AppleAuthProvider extends AbstractSocialProvider
             'redirect_uri' => $this->redirectUri,
             'grant_type' => 'authorization_code'
         ];
+
+        // Include the PKCE verifier (single-use) when one was stored during initiation.
+        $verifier = $this->consumePkceVerifier();
+        if ($verifier !== null) {
+            $params['code_verifier'] = $verifier;
+        }
 
         // Make POST request to token endpoint
         try {
@@ -317,7 +325,11 @@ class AppleAuthProvider extends AbstractSocialProvider
 
         // If private key starts with a path, read the file
         if (strpos($privateKey, '/') === 0 && file_exists($privateKey)) {
-            $privateKey = file_get_contents($privateKey);
+            $contents = file_get_contents($privateKey);
+            if ($contents === false) {
+                throw new \Exception("Unable to read Apple private key file");
+            }
+            $privateKey = $contents;
         }
 
         // Since Apple requires ES256 algorithm which our JWTService doesn't support yet,
@@ -338,8 +350,8 @@ class AppleAuthProvider extends AbstractSocialProvider
         ];
 
         // Encode header and payload
-        $headerEncoded = $this->base64UrlEncode(json_encode($header));
-        $payloadEncoded = $this->base64UrlEncode(json_encode($payload));
+        $headerEncoded = $this->base64UrlEncode((string) json_encode($header));
+        $payloadEncoded = $this->base64UrlEncode((string) json_encode($payload));
 
         // Create signature input
         $signatureInput = $headerEncoded . '.' . $payloadEncoded;
@@ -401,6 +413,11 @@ class AppleAuthProvider extends AbstractSocialProvider
         // Remove leading zeros
         $value = ltrim($value, "\x00");
 
+        // A zero component decodes to an empty string; return the zero-padded length.
+        if ($value === '') {
+            return str_repeat("\x00", $length);
+        }
+
         // Handle negative numbers (remove leading 0xFF)
         if (ord($value[0]) >= 0x80) {
             $value = "\x00" . $value;
@@ -438,43 +455,20 @@ class AppleAuthProvider extends AbstractSocialProvider
     }
 
     /**
-     * Extract user profile from ID token
+     * Extract user profile from a verified ID token.
+     *
+     * The token's RS256 signature is verified against Apple's JWKS and its iss/aud/exp claims
+     * are asserted (see verifyAndDecodeIdToken) BEFORE any claim is trusted. This is the single
+     * verified-claims path shared by both the web callback and native-SDK flows.
      *
      * @param string $idToken ID token from Apple
-     * @param array|null $userData User data from request (only provided on first login)
-     * @return array User profile data
+     * @param array<string, mixed>|null $userData User data from request (only on first login)
+     * @return array<string, mixed> User profile data
+     * @throws \Exception If the token signature or claims are invalid
      */
     private function extractUserProfile(string $idToken, ?array $userData = null): array
     {
-        // Try to decode using JWTService first
-        $payload = JWTService::decode($idToken);
-
-        // If JWTService couldn't decode it (might be signed with different algorithm),
-        // fall back to manual decoding
-        if ($payload === null) {
-            $tokenParts = explode('.', $idToken);
-            if (count($tokenParts) !== 3) {
-                throw new \Exception("Invalid ID token format");
-            }
-
-            // Decode payload part (base64url decode)
-            try {
-                $reflection = new \ReflectionClass(JWTService::class);
-                $method = $reflection->getMethod('base64UrlDecode');
-    
-                $decodedPayload = $method->invoke(null, $tokenParts[1]);
-            } catch (\ReflectionException $e) {
-                // Fallback implementation if reflection fails
-                $padding = str_repeat('=', 3 - (3 + strlen($tokenParts[1])) % 4);
-                $decodedPayload = base64_decode(strtr($tokenParts[1], '-_', '+/') . $padding);
-            }
-
-            $payload = json_decode($decodedPayload, true);
-
-            if (!is_array($payload)) {
-                throw new \Exception("Invalid ID token payload");
-            }
-        }
+        $payload = $this->verifyAndDecodeIdToken($idToken);
 
         // Get user info from token and request data
         $profile = [
@@ -500,7 +494,7 @@ class AppleAuthProvider extends AbstractSocialProvider
      * Verify a token from a native mobile SDK
      *
      * @param string $idToken ID token from Sign in with Apple SDK
-     * @return array|null User data if verified, null otherwise
+     * @return array<string, mixed>|null User data if verified, null otherwise
      */
     public function verifyNativeToken(string $idToken): ?array
     {
@@ -511,19 +505,12 @@ class AppleAuthProvider extends AbstractSocialProvider
         }
 
         try {
-            // Extract user information from ID token
+            // Verify the ID token signature + claims against Apple's JWKS, then build the
+            // profile from the verified payload (extractUserProfile performs the verification).
             $userProfile = $this->extractUserProfile($idToken);
 
             if (!isset($userProfile['id'])) {
                 $this->lastError = "Failed to extract user data from ID token";
-                return null;
-            }
-
-            // Verify the token with Apple's servers
-            $isValid = $this->verifyAppleIdToken($idToken);
-
-            if (!$isValid) {
-                $this->lastError = "Failed to verify Apple ID token";
                 return null;
             }
 
@@ -536,15 +523,34 @@ class AppleAuthProvider extends AbstractSocialProvider
     }
 
     /**
-     * Verify Apple ID token with Apple's servers
+     * Fetch Apple's JWKS, verify the ID token's RS256 signature against it, and assert the core
+     * claims (iss/aud/exp). Returns the verified payload. This is the only path that decodes an
+     * Apple ID token, so no caller ever trusts an unverified claim.
      *
      * @param string $idToken ID token from Sign in with Apple
-     * @return bool True if token is valid
-     * @throws \Exception If verification fails
+     * @return array<string, mixed> Verified token claims
+     * @throws \Exception If the JWKS cannot be fetched or verification fails
      */
-    private function verifyAppleIdToken(string $idToken): bool
+    private function verifyAndDecodeIdToken(string $idToken): array
     {
-        // Get Apple's public keys
+        $jwks = $this->fetchAppleJwks();
+
+        return $this->verifyIdTokenWithJwks(
+            $idToken,
+            $jwks,
+            $this->clientId,
+            'https://appleid.apple.com'
+        );
+    }
+
+    /**
+     * Fetch Apple's JSON Web Key Set.
+     *
+     * @return array<string, mixed>
+     * @throws \Exception If the JWKS cannot be fetched or is malformed
+     */
+    private function fetchAppleJwks(): array
+    {
         $jwksUrl = 'https://appleid.apple.com/auth/keys';
 
         try {
@@ -553,10 +559,7 @@ class AppleAuthProvider extends AbstractSocialProvider
             ]);
 
             if (!$response->isSuccessful()) {
-                throw new \Exception(
-                    "Failed to fetch JWKS, HTTP code: " . $response->getStatusCode() .
-                    ", Response: " . $response->getBody()
-                );
+                throw new \Exception("Failed to fetch Apple JWKS, HTTP code: " . $response->getStatusCode());
             }
 
             $jwks = $response->json();
@@ -570,85 +573,214 @@ class AppleAuthProvider extends AbstractSocialProvider
             throw new \Exception("Invalid JWKS response from Apple");
         }
 
-        // Parse the ID token to get the header
-        $tokenParts = explode('.', $idToken);
-        if (count($tokenParts) !== 3) {
+        return $jwks;
+    }
+
+    /**
+     * Cryptographically verify an Apple ID token against a JWKS and assert its core claims,
+     * returning the verified payload. Network-free (the JWKS is supplied), so the signature
+     * path is unit-testable.
+     *
+     * Verification order (signature is checked BEFORE any claim is trusted):
+     *  1. token has three parts and a decodable header;
+     *  2. header `alg` is exactly `RS256` (rejects `none` and HS/RS algorithm confusion);
+     *  3. the header `kid` matches an RSA signing key in the JWKS;
+     *  4. the RS256 signature over `header.payload` verifies against that key's public modulus;
+     *  5. `iss` equals the expected issuer, `aud` contains the expected client id, `exp` is future.
+     *
+     * @param array<string, mixed> $jwks Apple's JWKS (decoded /auth/keys response)
+     * @param int|null $now Unix time used for the expiry check (defaults to time())
+     * @return array<string, mixed> Verified token claims
+     * @throws \Exception If any step fails
+     */
+    protected function verifyIdTokenWithJwks(
+        string $idToken,
+        array $jwks,
+        string $expectedAud,
+        string $expectedIss,
+        ?int $now = null
+    ): array {
+        $now ??= time();
+
+        $parts = explode('.', $idToken);
+        if (count($parts) !== 3) {
             throw new \Exception("Invalid ID token format");
         }
+        [$encodedHeader, $encodedPayload, $encodedSignature] = $parts;
 
-        // Decode the header
-        try {
-            $reflection = new \ReflectionClass(JWTService::class);
-            $method = $reflection->getMethod('base64UrlDecode');
-
-            $decodedHeader = $method->invoke(null, $tokenParts[0]);
-        } catch (\ReflectionException $e) {
-            // Fallback implementation if reflection fails
-            $padding = str_repeat('=', 3 - (3 + strlen($tokenParts[0])) % 4);
-            $decodedHeader = base64_decode(strtr($tokenParts[0], '-_', '+/') . $padding);
-        }
-
-        $header = json_decode($decodedHeader, true);
-
-        if (!is_array($header) || !isset($header['kid'])) {
+        $header = json_decode($this->base64UrlDecode($encodedHeader), true);
+        if (!is_array($header)) {
             throw new \Exception("Invalid ID token header");
         }
 
-        // Find the matching key
-        $matchingKey = null;
-        foreach ($jwks['keys'] as $key) {
-            if (isset($key['kid']) && $key['kid'] === $header['kid']) {
-                $matchingKey = $key;
-                break;
-            }
+        // Pin the algorithm. Apple signs ID tokens with RS256; rejecting anything else closes
+        // the `alg: none` bypass and RS/HS key-confusion attacks.
+        if (($header['alg'] ?? null) !== 'RS256') {
+            throw new \Exception("Unexpected ID token algorithm");
         }
 
-        if (!$matchingKey) {
+        $kid = $header['kid'] ?? null;
+        if (!is_string($kid) || $kid === '') {
+            throw new \Exception("ID token header is missing kid");
+        }
+
+        $jwk = $this->findJwksKey($jwks, $kid);
+        if ($jwk === null) {
             throw new \Exception("No matching key found for token verification");
         }
 
-        // For now, we're assuming the token is valid if we can extract user data
-        // A full implementation would verify the signature using the public key
-        // But that would require more cryptography code than we can implement here
+        $publicKey = $this->jwkToPublicKeyPem($jwk);
+        $signature = $this->base64UrlDecode($encodedSignature);
+        $signingInput = $encodedHeader . '.' . $encodedPayload;
 
-        // Extract the payload to verify claims
-        $payload = JWTService::decode($idToken);
-
-        if (!$payload) {
-            // Manual decode
-            try {
-                $reflection = new \ReflectionClass(JWTService::class);
-                $method = $reflection->getMethod('base64UrlDecode');
-    
-                $decodedPayload = $method->invoke(null, $tokenParts[1]);
-            } catch (\ReflectionException $e) {
-                // Fallback implementation
-                $padding = str_repeat('=', 3 - (3 + strlen($tokenParts[1])) % 4);
-                $decodedPayload = base64_decode(strtr($tokenParts[1], '-_', '+/') . $padding);
-            }
-
-            $payload = json_decode($decodedPayload, true);
+        $result = openssl_verify($signingInput, $signature, $publicKey, OPENSSL_ALGO_SHA256);
+        if ($result !== 1) {
+            throw new \Exception("ID token signature verification failed");
         }
 
+        $payload = json_decode($this->base64UrlDecode($encodedPayload), true);
         if (!is_array($payload)) {
             throw new \Exception("Invalid ID token payload");
         }
 
-        // Verify audience claim
-        if (!isset($payload['aud']) || $payload['aud'] !== $this->clientId) {
-            throw new \Exception("Token was not issued for this application");
-        }
-
-        // Verify expiration
-        if (!isset($payload['exp']) || $payload['exp'] < time()) {
-            throw new \Exception("Token has expired");
-        }
-
-        // Verify issuer
-        if (!isset($payload['iss']) || $payload['iss'] !== 'https://appleid.apple.com') {
+        // Claims are only trusted now that the signature is proven.
+        if (($payload['iss'] ?? null) !== $expectedIss) {
             throw new \Exception("Token was not issued by Apple");
         }
 
-        return true;
+        $aud = $payload['aud'] ?? null;
+        $audMatches = is_array($aud) ? in_array($expectedAud, $aud, true) : ($aud === $expectedAud);
+        if (!$audMatches) {
+            throw new \Exception("Token was not issued for this application");
+        }
+
+        $exp = $payload['exp'] ?? null;
+        if (!is_numeric($exp)) {
+            throw new \Exception("Token is missing expiration");
+        }
+        if ((int) $exp <= $now) {
+            throw new \Exception("Token has expired");
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Locate the RSA signing key in a JWKS by key id.
+     *
+     * @param array<string, mixed> $jwks
+     * @return array<string, mixed>|null
+     */
+    private function findJwksKey(array $jwks, string $kid): ?array
+    {
+        $keys = is_array($jwks['keys'] ?? null) ? $jwks['keys'] : [];
+
+        foreach ($keys as $key) {
+            if (!is_array($key)) {
+                continue;
+            }
+            if (($key['kid'] ?? null) === $kid && ($key['kty'] ?? null) === 'RSA') {
+                return $key;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Reconstruct an RSA public key (PEM) from a JWK's base64url modulus (`n`) and exponent (`e`)
+     * by DER-encoding a SubjectPublicKeyInfo structure.
+     *
+     * @param array<string, mixed> $jwk
+     * @return string PEM-encoded public key
+     * @throws \Exception If the JWK is missing the RSA parameters
+     */
+    private function jwkToPublicKeyPem(array $jwk): string
+    {
+        $n = isset($jwk['n']) && is_string($jwk['n']) ? $this->base64UrlDecode($jwk['n']) : '';
+        $e = isset($jwk['e']) && is_string($jwk['e']) ? $this->base64UrlDecode($jwk['e']) : '';
+
+        if ($n === '' || $e === '') {
+            throw new \Exception("JWK is missing RSA public key parameters");
+        }
+
+        // RSAPublicKey ::= SEQUENCE { modulus INTEGER, publicExponent INTEGER }
+        $rsaPublicKey = $this->derSequence(
+            $this->derInteger($n) . $this->derInteger($e)
+        );
+
+        // SubjectPublicKeyInfo ::= SEQUENCE { AlgorithmIdentifier, BIT STRING }
+        // AlgorithmIdentifier for rsaEncryption (OID 1.2.840.113549.1.1.1) with NULL parameters.
+        $algorithmIdentifier = "\x30\x0d\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01\x05\x00";
+        $bitString = "\x03" . $this->derLength(strlen($rsaPublicKey) + 1) . "\x00" . $rsaPublicKey;
+
+        $spki = $this->derSequence($algorithmIdentifier . $bitString);
+
+        return "-----BEGIN PUBLIC KEY-----\n"
+            . chunk_split(base64_encode($spki), 64, "\n")
+            . "-----END PUBLIC KEY-----\n";
+    }
+
+    /**
+     * DER-encode an unsigned big-endian integer (prefixing 0x00 when the high bit is set so the
+     * value stays positive).
+     */
+    private function derInteger(string $bytes): string
+    {
+        $bytes = ltrim($bytes, "\x00");
+        if ($bytes === '') {
+            $bytes = "\x00";
+        }
+        if ((ord($bytes[0]) & 0x80) !== 0) {
+            $bytes = "\x00" . $bytes;
+        }
+
+        return "\x02" . $this->derLength(strlen($bytes)) . $bytes;
+    }
+
+    /**
+     * DER-encode a SEQUENCE wrapping the given contents.
+     */
+    private function derSequence(string $contents): string
+    {
+        return "\x30" . $this->derLength(strlen($contents)) . $contents;
+    }
+
+    /**
+     * DER length encoding (short form below 128, long form otherwise).
+     */
+    private function derLength(int $length): string
+    {
+        if ($length < 0x80) {
+            return chr($length);
+        }
+
+        $bytes = '';
+        while ($length > 0) {
+            $bytes = chr($length & 0xff) . $bytes;
+            $length >>= 8;
+        }
+
+        return chr(0x80 | strlen($bytes)) . $bytes;
+    }
+
+    /**
+     * Base64URL-decode a JWT segment.
+     *
+     * @throws \Exception On malformed input
+     */
+    private function base64UrlDecode(string $data): string
+    {
+        $remainder = strlen($data) % 4;
+        if ($remainder !== 0) {
+            $data .= str_repeat('=', 4 - $remainder);
+        }
+
+        $decoded = base64_decode(strtr($data, '-_', '+/'), true);
+        if ($decoded === false) {
+            throw new \Exception("Invalid base64url encoding in ID token");
+        }
+
+        return $decoded;
     }
 }

@@ -31,7 +31,7 @@ class GoogleAuthProvider extends AbstractSocialProvider
     /** @var string Redirect URI for Google OAuth callback */
     private string $redirectUri;
 
-    /** @var array OAuth scopes requested */
+    /** @var array<int, string> OAuth scopes requested */
     private array $scopes = [
         'https://www.googleapis.com/auth/userinfo.profile',
         'https://www.googleapis.com/auth/userinfo.email'
@@ -84,26 +84,7 @@ class GoogleAuthProvider extends AbstractSocialProvider
 
         $this->redirectUri = !empty($config['google']['redirect_uri']) ?
                             $config['google']['redirect_uri'] :
-                            (getenv('GOOGLE_REDIRECT_URI') ?: $this->getDefaultRedirectUri());
-    }
-
-    /**
-     * Generate default redirect URI based on current host
-     *
-     * @return string Default redirect URI
-     */
-    private function getDefaultRedirectUri(): string
-    {
-        // Get base URL from config
-        $baseUrl = config($this->context, 'app.url', '');
-
-        if (empty($baseUrl) && isset($_SERVER['HTTP_HOST'])) {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ||
-                         $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
-            $baseUrl = $protocol . $_SERVER['HTTP_HOST'];
-        }
-
-        return $baseUrl . '/auth/social/google/callback';
+                            (getenv('GOOGLE_REDIRECT_URI') ?: $this->defaultCallbackUri());
     }
 
     /**
@@ -139,13 +120,20 @@ class GoogleAuthProvider extends AbstractSocialProvider
      * and retrieve user information.
      *
      * @param Request $request The HTTP request
-     * @return array|null User data if authenticated, null otherwise
+     * @return array<string, mixed>|null User data if authenticated, null otherwise
      */
     protected function handleCallback(Request $request): ?array
     {
         // Validate configuration
         if (empty($this->clientId) || empty($this->clientSecret)) {
             $this->lastError = "Google OAuth configuration is missing";
+            return null;
+        }
+
+        // Validate the CSRF state parameter (fail closed) before doing any work.
+        if (!$this->validateOAuthState($request)) {
+            $this->lastError = "Invalid or missing OAuth state parameter";
+            $this->lastErrorStatusCode = 401;
             return null;
         }
 
@@ -198,14 +186,11 @@ class GoogleAuthProvider extends AbstractSocialProvider
             throw new \RuntimeException("Google OAuth configuration is missing");
         }
 
-        // Generate state token to prevent CSRF
-        $state = bin2hex(random_bytes(16));
-
-        // Store state in session
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            session_start();
-        }
-        $_SESSION['google_oauth_state'] = $state;
+        // Generate and persist a CSRF state token (validated on callback) and a PKCE challenge
+        // (verifier sent on the token exchange). This flow identifies the user via the userinfo
+        // endpoint and the access token, not an OIDC id_token, so no nonce is used here.
+        $state = $this->storeOAuthState();
+        $codeChallenge = $this->startPkce();
 
         // Build authorization URL
         $authUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -216,7 +201,9 @@ class GoogleAuthProvider extends AbstractSocialProvider
             'state' => $state,
             'scope' => implode(' ', $this->scopes),
             'access_type' => 'offline',
-            'prompt' => 'select_account'
+            'prompt' => 'select_account',
+            'code_challenge' => $codeChallenge,
+            'code_challenge_method' => 'S256',
         ];
 
         $authUrl .= '?' . http_build_query($params);
@@ -231,7 +218,7 @@ class GoogleAuthProvider extends AbstractSocialProvider
      * Exchange authorization code for access token
      *
      * @param string $code Authorization code from Google
-     * @return array Token data
+     * @return array<string, mixed> Token data
      */
     private function exchangeCodeForToken(string $code): array
     {
@@ -246,6 +233,12 @@ class GoogleAuthProvider extends AbstractSocialProvider
             'redirect_uri' => $this->redirectUri,
             'grant_type' => 'authorization_code'
         ];
+
+        // Include the PKCE verifier (single-use) when one was stored during initiation.
+        $verifier = $this->consumePkceVerifier();
+        if ($verifier !== null) {
+            $params['code_verifier'] = $verifier;
+        }
 
         // Make POST request to token endpoint
         try {
@@ -280,7 +273,7 @@ class GoogleAuthProvider extends AbstractSocialProvider
      * Get user profile from Google
      *
      * @param string $accessToken Access token from Google
-     * @return array User profile data
+     * @return array<string, mixed> User profile data
      */
     private function getUserProfile(string $accessToken): array
     {
@@ -344,7 +337,7 @@ class GoogleAuthProvider extends AbstractSocialProvider
      * Verify a token from a native mobile SDK
      *
      * @param string $idToken ID token from Google Sign-In SDK
-     * @return array|null User data if verified, null otherwise
+     * @return array<string, mixed>|null User data if verified, null otherwise
      */
     public function verifyNativeToken(string $idToken): ?array
     {
@@ -375,7 +368,7 @@ class GoogleAuthProvider extends AbstractSocialProvider
      * Verify Google ID token and get user info
      *
      * @param string $idToken ID token from Google Sign-In
-     * @return array User profile data
+     * @return array<string, mixed> User profile data
      * @throws \Exception If verification fails
      */
     private function verifyGoogleIdToken(string $idToken): array

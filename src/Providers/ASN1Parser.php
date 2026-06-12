@@ -28,7 +28,7 @@ class ASN1Parser
     /**
      * Read an ASN.1 object from the data
      *
-     * @return array Object information (type, length, value)
+     * @return array{type: int, length: int, value: string} Object information
      */
     public function readObject(): array
     {

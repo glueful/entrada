@@ -47,7 +47,8 @@ class SocialAccountController
 
             return Response::success($accounts, 'Social accounts retrieved successfully');
         } catch (\Exception $e) {
-            return Response::serverError('Failed to retrieve social accounts: ' . $e->getMessage());
+            error_log('[entrada] Failed to retrieve social accounts: ' . $e->getMessage());
+            return Response::serverError('Failed to retrieve social accounts');
         }
     }
 
@@ -56,7 +57,7 @@ class SocialAccountController
      *
      * @route DELETE /user/social-accounts/{uuid}
      */
-    public function destroy(Request $request): Response
+    public function destroy(Request $request, string $uuid): Response
     {
         try {
             $userData = $request->attributes->get('user');
@@ -66,7 +67,6 @@ class SocialAccountController
             }
 
             $userUuid = $userData['uuid'];
-            $uuid = $request->attributes->get('uuid', '');
 
             $account = $this->db->table('social_accounts')
                 ->where([
@@ -93,7 +93,8 @@ class SocialAccountController
 
             return Response::success(null, 'Social account unlinked successfully');
         } catch (\Exception $e) {
-            return Response::serverError('Failed to unlink social account: ' . $e->getMessage());
+            error_log('[entrada] Failed to unlink social account: ' . $e->getMessage());
+            return Response::serverError('Failed to unlink social account');
         }
     }
 }
