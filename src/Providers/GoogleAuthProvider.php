@@ -376,13 +376,15 @@ class GoogleAuthProvider extends AbstractSocialProvider
         // Google's token info endpoint
         $tokenInfoUrl = 'https://oauth2.googleapis.com/tokeninfo';
 
-        // Add ID token as query parameter
-        $url = $tokenInfoUrl . '?id_token=' . urlencode($idToken);
-
-        // Make GET request to verify token
+        // Make POST request to verify token. The ID token is sent in the form body (never the
+        // query string) so it does not leak into proxy/access/slow-request logs. The tokeninfo
+        // endpoint validates the signature and rejects expired/invalid tokens server-side.
         try {
-            $response = $this->httpClient->get($url, [
-                'timeout' => 10
+            $response = $this->httpClient->post($tokenInfoUrl, [
+                'timeout' => 10,
+                'form_params' => [
+                    'id_token' => $idToken
+                ]
             ]);
 
             if (!$response->isSuccessful()) {
@@ -404,9 +406,33 @@ class GoogleAuthProvider extends AbstractSocialProvider
             throw new \Exception("Invalid JSON response from token info endpoint: " . $e->getMessage());
         }
 
-        // Verify token was issued for our client
-        if (isset($tokenInfo['aud']) && $tokenInfo['aud'] !== $this->clientId) {
+        return $this->validateTokenInfoClaims($tokenInfo);
+    }
+
+    /**
+     * Validate the claims from a Google tokeninfo response and map them to our profile format.
+     *
+     * The tokeninfo endpoint validates the token signature and expiry server-side, so this
+     * method only enforces the claims that bind the token to *this* application: the audience
+     * (aud) and the issuer (iss). Both checks fail closed — a response missing the claim is
+     * rejected rather than trusted.
+     *
+     * @param array<string, mixed> $tokenInfo Decoded tokeninfo response
+     * @return array<string, mixed> User profile data
+     * @throws \Exception If the audience or issuer is missing or does not match
+     */
+    protected function validateTokenInfoClaims(array $tokenInfo): array
+    {
+        // Verify token was issued for our client (fail closed: a missing aud is rejected).
+        if (($tokenInfo['aud'] ?? null) !== $this->clientId) {
             throw new \Exception("Token was not issued for this application");
+        }
+
+        // Verify the token was issued by Google (fail closed). Google documents both the
+        // bare host and the https form of the issuer.
+        $iss = $tokenInfo['iss'] ?? null;
+        if ($iss !== 'https://accounts.google.com' && $iss !== 'accounts.google.com') {
+            throw new \Exception("Token was not issued by Google");
         }
 
         // Format profile data to our standard format
