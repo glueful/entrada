@@ -14,6 +14,127 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two-factor authentication with social providers
 - Social account activity monitoring and analytics
 
+## [1.9.0] - 2026-06-12 — OAuth Security Hardening (Framework 1.50)
+
+### Upgrade Notes
+
+This release hardens the OAuth flows; a few behaviors changed and may need attention:
+
+- **OAuth `state` is now enforced on every callback.** A working session is required — if sessions
+  are misconfigured, callbacks fail with 401. (Previously `state` was generated but never checked.)
+- **Email-based auto-linking now requires a *verified* email.** A social login whose email matches
+  an existing account is refused with 409 ("sign in and link…") unless the provider asserts the
+  email is verified. **Facebook and GitHub public-profile emails are now treated as unverified**
+  (their APIs don't expose a reliable per-email verified flag / it isn't on the profile), so those
+  logins link to existing accounts only when the user links explicitly while signed in.
+- **The default redirect URI now requires `app.url`.** The `$_SERVER['HTTP_HOST']` fallback was
+  removed (host-header injection); set `app.url` (or an explicit per-provider redirect URI).
+- **Apple ID tokens are now cryptographically verified** against Apple's JWKS — OpenSSL and
+  reachable `https://appleid.apple.com/auth/keys` are required for Apple Sign In.
+
+### Security
+
+- **OAuth `state` is now validated on callback (fail-closed CSRF protection) for all four
+  providers.** Previously every `initiateOAuthFlow` generated a `state` token and stored it in
+  the session, but no `handleCallback` ever read it back — the parameter was decorative, leaving
+  the authorization-code flow open to login-CSRF / session fixation (an attacker could complete
+  the victim's login as the attacker's identity). State generation and validation are now
+  centralized in `AbstractSocialProvider::storeOAuthState()` / `validateOAuthState()`: the token
+  is per-provider, single-use (cleared on every callback whether or not it matches), compared with
+  `hash_equals()`, and read from the POST body first (Apple's `form_post`) then the query string.
+  A missing or mismatched `state` now rejects the callback with a 401 before any code exchange.
+- **Apple ID-token signatures are now cryptographically verified.** Previously
+  `verifyAppleIdToken()` fetched Apple's JWKS, found the matching `kid`, then explicitly skipped
+  signature verification ("would require more cryptography code than we can implement here") and
+  trusted the claims; the web callback path did not verify at all and decoded the token with the
+  app's own JWT key. A forged token with a valid-looking `sub`/`email` was accepted, allowing
+  impersonation. The token is now verified end-to-end: the RSA public key is reconstructed from
+  the JWKS `n`/`e`, the RS256 signature over `header.payload` is checked with `openssl_verify`,
+  the algorithm is pinned to `RS256` (rejecting `alg: none` and RS/HS confusion), and `iss`/`aud`/
+  `exp` are asserted **after** the signature is proven. Both the web callback and native-SDK flows
+  now share this single verified-claims path (`extractUserProfile()` →
+  `verifyAndDecodeIdToken()`); the reflection-based unverified decode fallbacks were removed.
+- **Email-based account linking now requires a verified email (pre-account-takeover fix).**
+  `findOrCreateUser()` previously linked a social login into any existing account whose email
+  matched — with no verification gate — so an attacker who could get a provider to assert
+  `email = victim@…` was silently logged in as the victim. Linking to an existing account now
+  happens only when the provider asserts the email is verified; otherwise the login is refused
+  with a 409 ("sign in and link from your account settings") rather than linking or creating a
+  duplicate. Verification is normalized through a strict `isVerifiedFlag()` (the string `"false"`
+  and a missing flag both count as unverified — `(bool) "false"` was previously `true`).
+  - **GitHub** no longer marks the public profile email as verified; it resolves the email and
+    verification status authoritatively from `/user/emails` (primary-verified preferred) on every
+    login, via a shared `resolveVerifiedEmail()` (the previously duplicated web/native blocks).
+  - **Facebook** profile emails are now treated as unverified (the Graph API exposes no per-email
+    verified flag), so Facebook logins link to existing accounts only when done explicitly.
+- **PKCE (RFC 7636, S256) added to the authorization-code flow** for Google, Apple, and Facebook:
+  a code_verifier is generated and stored per-provider on initiation, the S256 code_challenge is
+  sent on the authorization request, and the single-use verifier is sent on the token exchange.
+  Together with the `state` fix this closes authorization-code injection/replay. (GitHub OAuth Apps
+  do not support PKCE, so that flow relies on `state`.)
+- **OIDC `nonce` added for Apple**: a nonce is issued on initiation and, after the id_token's
+  signature is verified, its `nonce` claim is checked (fail-closed, single-use) to bind the token
+  to the authorization request. (Google's flow identifies via the userinfo endpoint and the access
+  token rather than an id_token, so no nonce applies there.)
+- **Upstream provider error bodies are no longer leaked to clients.** `providerFailureResponse()`
+  and the `SocialAccountController` catch blocks previously returned raw provider/exception
+  messages (which can embed OAuth response bodies) to the caller. They now log the detail
+  server-side and return a generic, status-preserving message to the client.
+
+### Added
+
+- **First test suite for the extension** (`phpunit.xml` + `tests/`).
+  - OAuth-state CSRF protection: persistence under the per-provider session key, accept-on-match
+    (query and POST body), reject-on-mismatch / missing / no-stored-state (fail-closed), single-use
+    consumption, and per-provider key namespacing.
+  - Apple ID-token verification (with real RSA keypairs minted in-test): accepts a properly signed
+    token, and rejects a tampered signature, a token signed by a different key, `alg: none`, a
+    wrong `aud`/`iss`, an expired token, and an unknown `kid`.
+  - `isVerifiedFlag()` email-verification normalization (bool / `"true"` / `1` count as verified;
+    `"false"`, `"0"`, `null`, and arbitrary strings do not).
+  - `SocialAccountController::destroy()` route-param contract (the `{uuid}` param must be a named
+    method argument).
+  - PKCE/nonce helpers: the S256 code_challenge matches the RFC 7636 test vector, the verifier and
+    nonce are stored per-provider and single-use, and nonce validation is fail-closed.
+
+### Changed
+
+- **Static analysis raised to PHPStan level 8** (was level 5; ~52 findings fixed — array-shape
+  annotations across the providers plus real `string|false`/mixed type holes in
+  `json_decode`/`openssl_sign`/`base64UrlEncode`/the Apple callback). A committed
+  `phpstan.neon.dist` (level 8) now pins the gate, and `composer analyze` uses it.
+- **README honesty pass.** Corrected claims that no longer matched the code: the fabricated
+  `ASN1Parser::validateAppleIdToken()` example (Apple ID-token verification is via JWKS/RS256/
+  openssl; `ASN1Parser` is the DER reader used for ES256 client-secret signing), the `state`/CSRF
+  section (now describes the real `hash_equals`, single-use, fail-closed validation), the
+  `verifyNativeToken()` examples (single-argument), and the stale "Glueful Framework 1.22.0"
+  requirement (now 1.50.2).
+- **Coding standard switched from the deprecated `Squiz` to `PSR12`** (`composer phpcs`/`phpcbf`),
+  with a committed `phpcs.xml`; `src/` is clean (no errors or warnings).
+- **Default OAuth redirect URI no longer trusts the request `Host` header.** The four providers'
+  identical `getDefaultRedirectUri()` (which fell back to `$_SERVER['HTTP_HOST']`) were replaced by
+  a single `AbstractSocialProvider::defaultCallbackUri()` derived from the configured `app.url`;
+  when `app.url` is unset a relative path is returned (which fails the provider's registered
+  redirect_uri match) rather than an attacker-controllable host.
+
+### Fixed
+
+- **Extension version reporting.** `EntradaServiceProvider::composerVersion()` read a non-existent
+  top-level `version` key (returning `0.0.0` to the CLI/diagnostics); it now reads the canonical
+  `extra.glueful.version` (with hardened `string|false` handling).
+
+- **The unlink endpoint (`DELETE /user/social-accounts/{uuid}`) always 404'd.** `destroy()` read
+  the uuid via `$request->attributes->get('uuid')`, but the framework router injects route params
+  into controller methods by argument name (storing them only in the `_route_params` attribute),
+  so the value was always empty and the ownership lookup matched nothing. `destroy()` now declares
+  `string $uuid` as a method argument. (Ownership scoping by `user_uuid` was already correct, so
+  this was a functional break, not a security hole.)
+- **`convertToBinary()` (Apple ES256 signing) no longer dereferences an empty string.** A zero R/S
+  component left an empty string after `ltrim`, so `ord($value[0])` hit an undefined offset; it now
+  returns the zero-padded length.
+- **Redundant `auth` middleware removed from the unlink route** — the `/user/social-accounts`
+  group already applies it; the route now only adds `rate_limit`.
+
 ## [1.8.1] - 2026-06-05 — @queryParam Route Docs
 
 ### Changed
