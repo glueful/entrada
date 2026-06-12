@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<ruleset name="entrada">
+    <description>Entrada coding standard (PSR-12).</description>
+
+    <file>src</file>
+
+    <arg name="colors"/>
+    <arg value="p"/>
+
+    <rule ref="PSR12"/>
+</ruleset>
