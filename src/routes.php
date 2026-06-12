@@ -259,7 +259,10 @@ $router->group(['prefix' => '/auth/social'], function (Router $router) {
      * @summary Apple Native Authentication
      * @description Authenticates a user with an Apple ID token from a native mobile app
      * @tag Social Authentication
-     * @requestBody id_token:string="ID token obtained from Sign in with Apple SDK" {required=id_token}
+     * @requestBody id_token:string="ID token obtained from Sign in with Apple SDK"
+     * nonce:string="Optional raw nonce the client bound to its Sign in with Apple request; when
+     * supplied, the token's nonce claim must match sha256(nonce) (replay protection)"
+     * {required=id_token}
      * @response 200 application/json "Successfully authenticated with Apple" {
      *   access_token:string="JWT access token",
      *   token_type:string="Bearer",

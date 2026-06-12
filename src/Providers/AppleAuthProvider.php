@@ -11,6 +11,7 @@ use Glueful\Extensions\Entrada\Providers\AbstractSocialProvider;
 use Glueful\Extensions\Entrada\Providers\ASN1Parser;
 use Glueful\Http\Client;
 use Glueful\Http\Exceptions\HttpException;
+use Glueful\Cache\CacheStore;
 
 /**
  * Apple Authentication Provider
@@ -22,6 +23,12 @@ use Glueful\Http\Exceptions\HttpException;
 class AppleAuthProvider extends AbstractSocialProvider
 {
     public const PROVIDER = 'apple';
+
+    /** @var string Cache key holding Apple's JWKS document */
+    private const JWKS_CACHE_KEY = 'entrada.apple.jwks';
+
+    /** @var int Seconds the JWKS is cached before a fresh fetch (Apple rotates keys infrequently) */
+    private const JWKS_CACHE_TTL = 3600;
 
     /** @var string Client ID (Service ID) from Apple Developer Account */
     private string $clientId;
@@ -538,10 +545,20 @@ class AppleAuthProvider extends AbstractSocialProvider
     /**
      * Verify a token from a native mobile SDK
      *
+     * Native (SDK) flows have no server-stored nonce — the server never issued one — so by default
+     * the nonce claim is not enforced (preserving existing native clients). Callers SHOULD bind the
+     * token to the request by passing the raw nonce the client used: the Sign in with Apple SDK
+     * convention is that the client sets `nonce = sha256(rawNonce)` on the authorization request, so
+     * the token's `nonce` claim is the hash. When a raw nonce is supplied we require the token to
+     * carry a matching `nonce` claim (hash match, or raw-value match for clients that passed the raw
+     * value), which closes the captured-token replay window.
+     *
      * @param string $idToken ID token from Sign in with Apple SDK
+     * @param string|null $rawNonce Optional raw nonce the client generated for this request; when
+     *                              supplied, the token's nonce claim must match it (see above)
      * @return array<string, mixed>|null User data if verified, null otherwise
      */
-    public function verifyNativeToken(string $idToken): ?array
+    public function verifyNativeToken(string $idToken, ?string $rawNonce = null): ?array
     {
         // Validate configuration
         if (empty($this->clientId) || empty($this->teamId) || empty($this->keyId)) {
@@ -559,12 +576,40 @@ class AppleAuthProvider extends AbstractSocialProvider
                 return null;
             }
 
+            // Opt-in replay protection: when the client supplies the raw nonce it bound to this
+            // request, the verified token must carry a matching nonce claim. Skipped entirely when
+            // no raw nonce is supplied, preserving existing native clients.
+            if ($rawNonce !== null && $rawNonce !== '') {
+                $claims = is_array($userProfile['raw'] ?? null) ? $userProfile['raw'] : [];
+                if (!$this->nativeNonceMatches($claims['nonce'] ?? null, $rawNonce)) {
+                    $this->lastError = "Invalid or missing nonce in Apple ID token";
+                    $this->lastErrorStatusCode = 401;
+                    return null;
+                }
+            }
+
             // Find or create user from Apple data
             return $this->findOrCreateUser($userProfile);
         } catch (\Exception $e) {
             $this->lastError = "Apple token verification error: " . $e->getMessage();
             return null;
         }
+    }
+
+    /**
+     * Confirm a token's `nonce` claim binds to the raw nonce the client supplied. Accepts the
+     * Apple SDK convention where the claim is sha256(rawNonce), and also a plain raw-value match
+     * for clients that set the raw value directly. Both comparisons use hash_equals (constant time).
+     * A missing/non-string claim never matches, so a supplied raw nonce rejects a nonce-less token.
+     */
+    protected function nativeNonceMatches(mixed $tokenNonce, string $rawNonce): bool
+    {
+        if (!is_string($tokenNonce) || $tokenNonce === '') {
+            return false;
+        }
+
+        return hash_equals(hash('sha256', $rawNonce), $tokenNonce)
+            || hash_equals($rawNonce, $tokenNonce);
     }
 
     /**
@@ -578,7 +623,7 @@ class AppleAuthProvider extends AbstractSocialProvider
      */
     protected function verifyAndDecodeIdToken(string $idToken): array
     {
-        $jwks = $this->fetchAppleJwks();
+        $jwks = $this->getAppleJwks($idToken);
 
         return $this->verifyIdTokenWithJwks(
             $idToken,
@@ -589,12 +634,99 @@ class AppleAuthProvider extends AbstractSocialProvider
     }
 
     /**
+     * Resolve Apple's JWKS for verifying the given token, preferring the cache.
+     *
+     * Apple rotates signing keys infrequently, so the JWKS is cached for JWKS_CACHE_TTL seconds to
+     * keep it out of the critical path of every login (and to survive a transient JWKS outage). On
+     * a `kid` MISS against the cached set — the signal that Apple has rotated keys — we refetch once
+     * (bypassing the cache) and re-cache, then return the fresh set so verification can re-look-up
+     * before failing. Caching is best-effort: if the cache store is unavailable we fall back to a
+     * direct fetch, and a malformed/failed fetch is never cached.
+     *
+     * @return array<string, mixed>
+     * @throws \Exception If the JWKS cannot be fetched or is malformed
+     */
+    protected function getAppleJwks(string $idToken): array
+    {
+        $cache = $this->resolveCache();
+
+        // No cache available: behave exactly as before — fetch directly.
+        if ($cache === null) {
+            return $this->fetchAppleJwks();
+        }
+
+        $kid = $this->extractKid($idToken);
+
+        $cached = $cache->get(self::JWKS_CACHE_KEY);
+        if (is_array($cached) && isset($cached['keys']) && is_array($cached['keys'])) {
+            // Serve from cache when the token's key id is present (or the kid is unreadable —
+            // verification will reject it anyway, no need to spend a network round trip first).
+            if ($kid === null || $this->findJwksKey($cached, $kid) !== null) {
+                return $cached;
+            }
+        }
+
+        // Cache miss, or a known key id that has rotated out of the cached set: fetch fresh and
+        // re-cache. Only a well-formed response reaches this point (fetchAppleJwks throws otherwise),
+        // so a failed/malformed response is never cached.
+        $fresh = $this->fetchAppleJwks();
+
+        try {
+            $cache->set(self::JWKS_CACHE_KEY, $fresh, self::JWKS_CACHE_TTL);
+        } catch (\Throwable) {
+            // Caching is best-effort; a write failure must not break verification.
+        }
+
+        return $fresh;
+    }
+
+    /**
+     * Resolve the framework cache store, degrading to null (direct fetch) if it is unavailable so
+     * caching can never break verification.
+     *
+     * @return CacheStore<mixed>|null
+     */
+    protected function resolveCache(): ?CacheStore
+    {
+        try {
+            $cache = $this->context->getContainer()->get(CacheStore::class);
+
+            return $cache instanceof CacheStore ? $cache : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Best-effort read of the `kid` from an ID token header, used to decide whether the cached JWKS
+     * can serve the token. Returns null when the header is unreadable — verification proper will
+     * surface the real error.
+     */
+    private function extractKid(string $idToken): ?string
+    {
+        $parts = explode('.', $idToken);
+        if ($parts[0] === '') {
+            return null;
+        }
+
+        try {
+            $header = json_decode($this->base64UrlDecode($parts[0]), true);
+        } catch (\Exception) {
+            return null;
+        }
+
+        $kid = is_array($header) ? ($header['kid'] ?? null) : null;
+
+        return is_string($kid) && $kid !== '' ? $kid : null;
+    }
+
+    /**
      * Fetch Apple's JSON Web Key Set.
      *
      * @return array<string, mixed>
      * @throws \Exception If the JWKS cannot be fetched or is malformed
      */
-    private function fetchAppleJwks(): array
+    protected function fetchAppleJwks(): array
     {
         $jwksUrl = 'https://appleid.apple.com/auth/keys';
 

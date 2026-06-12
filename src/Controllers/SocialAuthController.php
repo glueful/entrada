@@ -323,7 +323,12 @@ class SocialAuthController
                 return Response::validation(['id_token' => ['ID token is required']], 'Validation failed');
             }
 
-            $userData = $this->appleProvider->verifyNativeToken($idToken);
+            // Optional replay protection: when the native client supplies the raw nonce it bound to
+            // its Sign in with Apple request, the provider asserts the token's nonce claim matches.
+            $rawNonce = $requestData['nonce'] ?? null;
+            $rawNonce = is_string($rawNonce) && $rawNonce !== '' ? $rawNonce : null;
+
+            $userData = $this->appleProvider->verifyNativeToken($idToken, $rawNonce);
 
             if (!$userData) {
                 return $this->providerFailureResponse($this->appleProvider, 'Failed to verify Apple ID token');
