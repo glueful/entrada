@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+- Twitter/X OAuth integration
+- LinkedIn professional authentication
+- Discord social login support
+- Two-factor authentication with social providers
+- Social account activity monitoring and analytics
+
 ## [1.10.0] - 2026-06-13
 
 ### Fixed
@@ -31,13 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Social-auth failures log once (controller-side, with request context) instead of twice; the unlink/ownership lookups are column-scoped instead of fetching `profile_data`.
-
-### Planned
-- Twitter/X OAuth integration
-- LinkedIn professional authentication
-- Discord social login support
-- Two-factor authentication with social providers
-- Social account activity monitoring and analytics
 
 ## [1.9.0] - 2026-06-12 — OAuth Security Hardening (Framework 1.50)
 
