@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-06-13
+
 ### Fixed
 - **Verified-email status now flows end to end.** Apple's `email_verified` claim stayed buried in the profile's `raw` payload while alias resolution reads top-level keys only — so the 1.9.0 verified-email linking gate rejected every Apple sign-in matching an existing local email with 409 (Apple emails are always verified — the gate permanently locked out the strictest provider), and new Apple users never got `email_verified_at` stamped. The claim is now promoted to a top-level profile key (raw value preserved; `isVerifiedFlag()` normalizes Apple's bool/string forms). `formatUserData()` also carries `email_verified` and the mapped `email_verified_at` timestamp from the persisted row, so session/OIDC claims report `email_verified: true` for verified users across all providers (previously always `false` — `TokenManager::createUserSession()` derives the OIDC flag from `email_verified_at`).
 
