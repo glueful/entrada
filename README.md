@@ -131,7 +131,8 @@ Obtain OAuth credentials from each provider you want to support:
 3. Create Services ID under Identifiers
 4. Enable "Sign in with Apple" capability
 5. Configure domain and return URLs
-6. Create or reuse a private key (`.p8` file)
+6. Create or reuse a private key (`.p8` file). `APPLE_CLIENT_SECRET` accepts the `.p8` file path,
+   an inline PEM, or a pre-built ES256 client-secret JWT (all auto-detected).
 7. Set redirect URI: `https://yourdomain.com/auth/social/apple/callback`
 
 ### Environment Variables
@@ -154,18 +155,27 @@ GITHUB_CLIENT_ID=your-github-client-id
 GITHUB_CLIENT_SECRET=your-github-client-secret
 GITHUB_REDIRECT_URI=https://yourdomain.com/auth/social/github/callback
 
+# Facebook Graph API version (optional; default v21.0)
+FACEBOOK_API_VERSION=v21.0
+
 # Apple Sign In Configuration
 APPLE_CLIENT_ID=com.yourdomain.services.id
+# APPLE_CLIENT_SECRET accepts THREE forms (auto-detected): a .p8 key file path (shown),
+# an inline PEM private key, or a pre-built ES256 client-secret JWT.
 APPLE_CLIENT_SECRET=/path/to/AuthKey_XXXXXXXXXX.p8
 APPLE_TEAM_ID=XXXXXXXXXX
 APPLE_KEY_ID=XXXXXXXXXX
 APPLE_REDIRECT_URI=https://yourdomain.com/auth/social/apple/callback
-
-# Entrada Configuration (sauth)
-SAUTH_AUTO_REGISTER=true
-SAUTH_LINK_ACCOUNTS=true
-SAUTH_SYNC_PROFILE=true
 ```
+
+> **`app.url` is required.** When a provider has no explicit `*_REDIRECT_URI` set, Entrada derives the
+> default callback URI from the framework's `app.url` config (`APP_URL` in `.env`) — there is **no**
+> `HTTP_HOST` fallback (host-header injection hardening, 1.9.0). If `app.url` is unset and you rely on
+> the default, the generated `redirect_uri` is a relative path and will fail the provider's registered
+> redirect-URI match. Either set `APP_URL` or provide an explicit per-provider redirect URI.
+
+> **Note:** `auto_register` and `sync_profile` are configured in `config/sauth.php` (see below); they
+> are not read from environment variables.
 
 ### Extension Configuration
 
@@ -174,28 +184,29 @@ Customize behavior in `config/sauth.php`:
 ```php
 return [
     'enabled_providers' => ['google', 'facebook', 'github', 'apple'],
-    'auto_register' => env('SAUTH_AUTO_REGISTER', true),
-    'link_accounts' => env('SAUTH_LINK_ACCOUNTS', true),
-    'sync_profile' => env('SAUTH_SYNC_PROFILE', true),
-    
+    'auto_register' => true, // auto-create user accounts for new social logins
+    'sync_profile' => true,  // sync profile data from social providers
+
+    // Account linking is governed by the verified-email gate (see "Account Linking" below),
+    // not a config flag — a social identity is auto-linked to an existing local account only
+    // when the provider asserts the email is verified.
+
     // Provider configurations
     'google' => [
         'client_id' => env('GOOGLE_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),
         'redirect_uri' => env('GOOGLE_REDIRECT_URI'),
-        'scopes' => ['openid', 'profile', 'email'],
     ],
     'facebook' => [
         'app_id' => env('FACEBOOK_APP_ID'),
         'app_secret' => env('FACEBOOK_APP_SECRET'),
         'redirect_uri' => env('FACEBOOK_REDIRECT_URI'),
-        'scopes' => ['email', 'public_profile'],
+        'api_version' => env('FACEBOOK_API_VERSION', 'v21.0'), // Graph API version
     ],
     'github' => [
         'client_id' => env('GITHUB_CLIENT_ID'),
         'client_secret' => env('GITHUB_CLIENT_SECRET'),
         'redirect_uri' => env('GITHUB_REDIRECT_URI'),
-        'scopes' => ['user:email', 'read:user'],
     ],
     'apple' => [
         'client_id' => env('APPLE_CLIENT_ID'),
@@ -760,6 +771,10 @@ GET  /auth/social/apple                   // Apple OAuth initiation
 POST /auth/social/apple/callback          // Apple callback (POST only)
 ```
 
+All public endpoints above are rate limited per-IP (native POSTs 10/min; init + callbacks 20/min).
+`POST /auth/social/apple` additionally accepts an optional `nonce` field for native replay protection
+(see [Native nonce binding](#native-nonce-binding-replay-protection)).
+
 ### Account Management Endpoints
 
 ```php
@@ -804,16 +819,33 @@ When `auto_register` is enabled, the extension automatically creates user accoun
 
 ### Account Linking
 
-Link social accounts to existing users:
+When a social login matches an existing local account by email, Entrada auto-links the social
+identity **only if the provider asserts the email is verified** (the verified-email gate — there is
+no `link_accounts` config flag; the gate is the control). If the email is unverified, the login is
+refused with a `409` and the user must sign in and link the provider explicitly from their account
+settings. This prevents account takeover via an attacker-controlled unverified email at the provider.
 
 ```php
 // Account linking process
 1. User authenticates with social provider
 2. System finds existing user by email
-3. Links social account to existing user
+3. If the provider reports the email as VERIFIED → link the social account
+   (if UNVERIFIED → reject with 409; the user must link manually after signing in)
 4. Updates profile if sync_profile is enabled
 5. Returns authentication tokens
 ```
+
+#### Provider verified-email matrix
+
+Each provider asserts email verification differently; the matrix below is what drives the
+auto-link gate (and whether new users get `email_verified_at` stamped):
+
+| Provider | Verified email asserted? | How |
+|----------|--------------------------|-----|
+| **Google** | Yes | OIDC `email_verified` claim from the ID token / tokeninfo. |
+| **GitHub** | Yes | Resolved authoritatively from the `/user/emails` endpoint (primary + verified preferred). The public profile email alone is **not** trusted. |
+| **Apple** | Yes | Apple verifies all emails; the `email_verified` claim is propagated from the verified ID token. |
+| **Facebook** | No | The Graph API exposes no per-email verified flag, so Facebook emails are treated as **unverified** — email-match linking always requires a manual link. |
 
 ### Profile Synchronization
 
@@ -841,8 +873,25 @@ over the token is checked with `openssl_verify`, the algorithm is pinned to `RS2
 inside `verifyNativeToken()` and the web callback — both share one verified-claims path; callers
 never decode an unverified token themselves.
 
-The bundled `ASN1Parser` is a small DER reader used when **generating** the Apple client-secret
-JWT (ES256 signing), not for ID-token validation.
+The bundled `ASN1Parser` is **only** a DER reader used when **generating** the Apple client-secret
+JWT — it performs the DER→JOSE conversion of the ES256 signature during client-secret signing. It is
+**not** part of ID-token validation: incoming ID tokens are verified RS256 against Apple's JWKS (above).
+
+**JWKS caching:** Apple's JWKS (`/auth/keys`) is cached automatically in the framework cache store
+(1-hour TTL) so it stays out of the critical path of every login. On a `kid` miss (key rotation) it
+does a single bypass-refetch; failed/malformed responses are never cached, and it degrades gracefully
+to a direct fetch when no cache is available.
+
+**Client-secret forms:** `APPLE_CLIENT_SECRET` accepts three forms, auto-detected structurally — a
+`.p8` key-file path, an inline PEM private key, or a pre-built ES256 client-secret JWT (used verbatim).
+
+#### Native nonce binding (replay protection)
+
+`POST /auth/social/apple` accepts an optional `nonce` field. When a native client supplies the raw
+nonce it bound to its Sign in with Apple SDK request, Entrada requires the verified ID token's `nonce`
+claim to match (`sha256(rawNonce)` per the Apple SDK convention, or the raw value), closing the
+captured-token replay window. Clients that send no nonce are unaffected. **Native clients are
+recommended to supply a nonce.**
 
 #### Apple-Specific Considerations
 
@@ -882,6 +931,33 @@ in the session when the flow is initiated, then validated on the callback: it is
 `hash_equals()`, is single-use (cleared on every callback), and a missing or mismatched value
 rejects the callback with a 401 before any authorization code is exchanged. This is automatic — no
 caller action is required.
+
+### Rate Limiting
+
+All public social-auth endpoints are rate limited per-IP (sliding window):
+
+- **Native token POSTs** (`POST /auth/social/{provider}`) — 10 requests/min (token-grinding surface).
+- **OAuth callbacks and init redirects** (`GET /auth/social/{provider}`, `.../callback`) — 20 requests/min.
+- **Unlink** (`DELETE /user/social-accounts/{uuid}`) — 10 requests/min.
+
+> **Implementation note:** route rate limiting in Glueful requires the `->rateLimit(n, minutes)`
+> builder **plus** `->middleware(['rate_limit'])`. The middleware-string form (`rate_limit:10,60`)
+> is a silent no-op — the framework's limiter ignores string params and reads only the builder
+> config. If you add your own rate-limited routes, use the builder form.
+
+### Verified-email session claims
+
+The provider's verified-email status flows end to end: a verified email stamps `email_verified_at`
+on the user row, and that drives `email_verified: true` in the session / OIDC claims reported back
+to the client (previously always `false`). See the provider verified-email matrix above for which
+providers assert verification.
+
+### `profile_data` privacy
+
+The `social_accounts.profile_data` column stores only a minimal identity allowlist
+(`id`, `email`, `name`, `first_name`, `last_name`, `username`, `picture`, `email_verified`) — never
+the full raw provider payload. Nothing in the extension reads the column back, so this is pure
+exposure reduction.
 
 ### JWT Token Management
 
@@ -924,6 +1000,10 @@ $tokens = $this->tokenManager->generateTokenPair($userUuid, [
 - Long-lived token generation
 ```
 
+> **Graph API version:** configurable via `FACEBOOK_API_VERSION` / `sauth.facebook.api_version`
+> (default `v21.0`). Facebook emails are treated as **unverified** (the Graph API exposes no
+> per-email verified flag), so email-match account linking always requires a manual link.
+
 ### GitHub Provider
 
 ```php
@@ -931,8 +1011,11 @@ $tokens = $this->tokenManager->generateTokenPair($userUuid, [
 - OAuth 2.0 with required scopes
 - Access token validation
 - User profile via GitHub API
-- Email verification for private emails
+- Verified email resolved authoritatively from /user/emails (primary + verified)
 ```
+
+> **PKCE:** GitHub OAuth Apps do not support PKCE, so the GitHub code flow relies on the OAuth
+> `state` parameter for request binding (rather than a `code_verifier`).
 
 ### Apple Provider
 
@@ -982,7 +1065,6 @@ Enable detailed logging:
 
 ```env
 APP_DEBUG=true
-SOCIAL_LOGIN_DEBUG=true
 ```
 
 ### Health Checks
@@ -1041,9 +1123,8 @@ class CustomProvider extends AbstractSocialProvider
 ## Performance Considerations
 
 - **Connection Pooling**: HTTP clients use connection pooling for provider APIs
-- **Caching**: Provider configurations and public keys are cached
+- **JWKS Caching**: Apple's JWKS is cached in the framework cache store (1-hour TTL) so it stays out of the per-login critical path; a `kid` miss triggers a single refetch for key rotation
 - **Database Optimization**: Indexed social accounts table for fast lookups
-- **Token Caching**: JWT validation results are cached to reduce API calls
 
 ## License
 

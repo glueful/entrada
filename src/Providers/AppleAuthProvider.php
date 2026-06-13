@@ -8,10 +8,10 @@ use Glueful\Bootstrap\ApplicationContext;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Glueful\Extensions\Entrada\Providers\AbstractSocialProvider;
-use Glueful\Auth\JWTService;
 use Glueful\Extensions\Entrada\Providers\ASN1Parser;
 use Glueful\Http\Client;
 use Glueful\Http\Exceptions\HttpException;
+use Glueful\Cache\CacheStore;
 
 /**
  * Apple Authentication Provider
@@ -23,6 +23,12 @@ use Glueful\Http\Exceptions\HttpException;
 class AppleAuthProvider extends AbstractSocialProvider
 {
     public const PROVIDER = 'apple';
+
+    /** @var string Cache key holding Apple's JWKS document */
+    private const JWKS_CACHE_KEY = 'entrada.apple.jwks';
+
+    /** @var int Seconds the JWKS is cached before a fresh fetch (Apple rotates keys infrequently) */
+    private const JWKS_CACHE_TTL = 3600;
 
     /** @var string Client ID (Service ID) from Apple Developer Account */
     private string $clientId;
@@ -315,15 +321,21 @@ class AppleAuthProvider extends AbstractSocialProvider
      */
     private function generateClientSecret(): string
     {
-        // If client secret is already set and it's a valid JWT, use it
-        if (!empty($this->clientSecret) && strpos($this->clientSecret, '.') !== false) {
+        // If a pre-built client-secret JWT was supplied, use it verbatim. Detection is
+        // structural rather than "contains a dot": a `.p8` key-file path (e.g.
+        // /etc/keys/AuthKey_ABC.p8) also contains dots, so a substring test would misclassify
+        // it and ship the literal path to Apple. A JWT has exactly three non-empty base64url
+        // segments whose header decodes to JSON carrying an `alg` key — everything else falls
+        // through to the key-loading path below.
+        if ($this->looksLikeJwt($this->clientSecret)) {
             return $this->clientSecret;
         }
 
         // Private key from environment or file
         $privateKey = $this->clientSecret;
 
-        // If private key starts with a path, read the file
+        // If private key points at a file path, read the file. Checked before treating the
+        // value as inline PEM so a path is never mistaken for key material.
         if (strpos($privateKey, '/') === 0 && file_exists($privateKey)) {
             $contents = file_get_contents($privateKey);
             if ($contents === false) {
@@ -371,6 +383,43 @@ class AppleAuthProvider extends AbstractSocialProvider
     }
 
     /**
+     * Structurally test whether a value is a pre-built JWT (as opposed to a key-file path or
+     * inline PEM). A JWT has exactly three non-empty dot-separated base64url segments and its
+     * first segment base64url-decodes to a JSON object carrying an `alg` key. A `.p8` path or a
+     * PEM block fails this test, so it can never be mistaken for a client-secret JWT.
+     *
+     * @param string $value Candidate client secret
+     * @return bool True if the value is shaped like a JWT
+     */
+    private function looksLikeJwt(string $value): bool
+    {
+        if ($value === '') {
+            return false;
+        }
+
+        $parts = explode('.', $value);
+        if (count($parts) !== 3) {
+            return false;
+        }
+
+        foreach ($parts as $part) {
+            if ($part === '') {
+                return false;
+            }
+        }
+
+        try {
+            $headerJson = $this->base64UrlDecode($parts[0]);
+        } catch (\Exception) {
+            return false;
+        }
+
+        $header = json_decode($headerJson, true);
+
+        return is_array($header) && isset($header['alg']);
+    }
+
+    /**
      * Convert DER format signature to JOSE format
      *
      * @param string $der DER encoded signature from OpenSSL
@@ -378,7 +427,10 @@ class AppleAuthProvider extends AbstractSocialProvider
      */
     private function convertDERtoJOSE(string $der): string
     {
-        // Extract R and S values from DER format
+        // Extract R and S from the DER signature: a SEQUENCE wrapping two INTEGERs. Parse r and s
+        // from the SEQUENCE's *value* with a fresh parser — correct regardless of whether
+        // readObject() descends into or consumes a constructed element, and it bounds-checks the
+        // inner reads against the SEQUENCE body alone.
         $asn1 = new ASN1Parser($der);
         $seq = $asn1->readObject();
 
@@ -386,8 +438,9 @@ class AppleAuthProvider extends AbstractSocialProvider
             throw new \Exception('Invalid DER signature format');
         }
 
-        $r = $asn1->readObject();
-        $s = $asn1->readObject();
+        $inner = new ASN1Parser($seq['value']);
+        $r = $inner->readObject();
+        $s = $inner->readObject();
 
         if ($r['type'] !== 0x02 || $s['type'] !== 0x02) {
             throw new \Exception('Invalid DER signature values');
@@ -410,7 +463,11 @@ class AppleAuthProvider extends AbstractSocialProvider
      */
     private function convertToBinary(string $value, int $length): string
     {
-        // Remove leading zeros
+        // Strip the leading bytes a DER INTEGER carries that the fixed-width JOSE form does not:
+        // the 0x00 sign byte DER prepends when the top bit is set (to keep the integer positive),
+        // plus any other leading zeros. What remains is the minimal big-endian unsigned magnitude,
+        // which is exactly what JOSE r/s encode — they are fixed-width unsigned integers, so no
+        // sign byte is ever re-added.
         $value = ltrim($value, "\x00");
 
         // A zero component decodes to an empty string; return the zero-padded length.
@@ -418,40 +475,29 @@ class AppleAuthProvider extends AbstractSocialProvider
             return str_repeat("\x00", $length);
         }
 
-        // Handle negative numbers (remove leading 0xFF)
-        if (ord($value[0]) >= 0x80) {
-            $value = "\x00" . $value;
-        }
-
-        // Pad to desired length
-        $value = str_pad($value, $length, "\x00", STR_PAD_LEFT);
-
-        // Truncate if too long
+        // The magnitude must fit the fixed width. A longer value means the DER INTEGER was
+        // malformed (or this isn't a P-256 signature); silently truncating would forge a
+        // corrupt-but-well-formed client secret, so fail loudly instead.
         if (strlen($value) > $length) {
-            $value = substr($value, -$length);
+            throw new \RuntimeException(
+                "ECDSA signature component is " . strlen($value)
+                . " bytes, exceeds the {$length}-byte ES256 width"
+            );
         }
 
-        return $value;
+        // Left-pad the magnitude to the fixed width.
+        return str_pad($value, $length, "\x00", STR_PAD_LEFT);
     }
 
     /**
-     * Base64URL encode (using framework's JWTService if available)
+     * Base64URL encode.
      *
      * @param string $data Data to encode
      * @return string Base64URL encoded string
      */
     private function base64UrlEncode(string $data): string
     {
-        // Use reflection to access the private method in JWTService
-        try {
-            $reflection = new \ReflectionClass(JWTService::class);
-            $method = $reflection->getMethod('base64UrlEncode');
-
-            return $method->invoke(null, $data);
-        } catch (\ReflectionException $e) {
-            // Fallback implementation if reflection fails
-            return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
-        }
+        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
     }
 
     /**
@@ -466,7 +512,7 @@ class AppleAuthProvider extends AbstractSocialProvider
      * @return array<string, mixed> User profile data
      * @throws \Exception If the token signature or claims are invalid
      */
-    private function extractUserProfile(string $idToken, ?array $userData = null): array
+    protected function extractUserProfile(string $idToken, ?array $userData = null): array
     {
         $payload = $this->verifyAndDecodeIdToken($idToken);
 
@@ -474,6 +520,12 @@ class AppleAuthProvider extends AbstractSocialProvider
         $profile = [
             'id' => $payload['sub'] ?? null,
             'email' => $payload['email'] ?? null,
+            // Promote the verified-email claim to a top-level key so the canonical alias
+            // resolution in AbstractSocialProvider::extractSocialValue() (which only inspects
+            // top-level keys) can see it. Apple sends this as bool true OR the string "true";
+            // pass the raw claim through unchanged — isVerifiedFlag() normalizes both, and
+            // coercing here would lose the distinction it relies on.
+            'email_verified' => $payload['email_verified'] ?? false,
             'name' => null,
             'first_name' => null,
             'last_name' => null,
@@ -493,10 +545,20 @@ class AppleAuthProvider extends AbstractSocialProvider
     /**
      * Verify a token from a native mobile SDK
      *
+     * Native (SDK) flows have no server-stored nonce — the server never issued one — so by default
+     * the nonce claim is not enforced (preserving existing native clients). Callers SHOULD bind the
+     * token to the request by passing the raw nonce the client used: the Sign in with Apple SDK
+     * convention is that the client sets `nonce = sha256(rawNonce)` on the authorization request, so
+     * the token's `nonce` claim is the hash. When a raw nonce is supplied we require the token to
+     * carry a matching `nonce` claim (hash match, or raw-value match for clients that passed the raw
+     * value), which closes the captured-token replay window.
+     *
      * @param string $idToken ID token from Sign in with Apple SDK
+     * @param string|null $rawNonce Optional raw nonce the client generated for this request; when
+     *                              supplied, the token's nonce claim must match it (see above)
      * @return array<string, mixed>|null User data if verified, null otherwise
      */
-    public function verifyNativeToken(string $idToken): ?array
+    public function verifyNativeToken(string $idToken, ?string $rawNonce = null): ?array
     {
         // Validate configuration
         if (empty($this->clientId) || empty($this->teamId) || empty($this->keyId)) {
@@ -514,12 +576,40 @@ class AppleAuthProvider extends AbstractSocialProvider
                 return null;
             }
 
+            // Opt-in replay protection: when the client supplies the raw nonce it bound to this
+            // request, the verified token must carry a matching nonce claim. Skipped entirely when
+            // no raw nonce is supplied, preserving existing native clients.
+            if ($rawNonce !== null && $rawNonce !== '') {
+                $claims = is_array($userProfile['raw'] ?? null) ? $userProfile['raw'] : [];
+                if (!$this->nativeNonceMatches($claims['nonce'] ?? null, $rawNonce)) {
+                    $this->lastError = "Invalid or missing nonce in Apple ID token";
+                    $this->lastErrorStatusCode = 401;
+                    return null;
+                }
+            }
+
             // Find or create user from Apple data
             return $this->findOrCreateUser($userProfile);
         } catch (\Exception $e) {
             $this->lastError = "Apple token verification error: " . $e->getMessage();
             return null;
         }
+    }
+
+    /**
+     * Confirm a token's `nonce` claim binds to the raw nonce the client supplied. Accepts the
+     * Apple SDK convention where the claim is sha256(rawNonce), and also a plain raw-value match
+     * for clients that set the raw value directly. Both comparisons use hash_equals (constant time).
+     * A missing/non-string claim never matches, so a supplied raw nonce rejects a nonce-less token.
+     */
+    protected function nativeNonceMatches(mixed $tokenNonce, string $rawNonce): bool
+    {
+        if (!is_string($tokenNonce) || $tokenNonce === '') {
+            return false;
+        }
+
+        return hash_equals(hash('sha256', $rawNonce), $tokenNonce)
+            || hash_equals($rawNonce, $tokenNonce);
     }
 
     /**
@@ -531,9 +621,9 @@ class AppleAuthProvider extends AbstractSocialProvider
      * @return array<string, mixed> Verified token claims
      * @throws \Exception If the JWKS cannot be fetched or verification fails
      */
-    private function verifyAndDecodeIdToken(string $idToken): array
+    protected function verifyAndDecodeIdToken(string $idToken): array
     {
-        $jwks = $this->fetchAppleJwks();
+        $jwks = $this->getAppleJwks($idToken);
 
         return $this->verifyIdTokenWithJwks(
             $idToken,
@@ -544,12 +634,99 @@ class AppleAuthProvider extends AbstractSocialProvider
     }
 
     /**
+     * Resolve Apple's JWKS for verifying the given token, preferring the cache.
+     *
+     * Apple rotates signing keys infrequently, so the JWKS is cached for JWKS_CACHE_TTL seconds to
+     * keep it out of the critical path of every login (and to survive a transient JWKS outage). On
+     * a `kid` MISS against the cached set — the signal that Apple has rotated keys — we refetch once
+     * (bypassing the cache) and re-cache, then return the fresh set so verification can re-look-up
+     * before failing. Caching is best-effort: if the cache store is unavailable we fall back to a
+     * direct fetch, and a malformed/failed fetch is never cached.
+     *
+     * @return array<string, mixed>
+     * @throws \Exception If the JWKS cannot be fetched or is malformed
+     */
+    protected function getAppleJwks(string $idToken): array
+    {
+        $cache = $this->resolveCache();
+
+        // No cache available: behave exactly as before — fetch directly.
+        if ($cache === null) {
+            return $this->fetchAppleJwks();
+        }
+
+        $kid = $this->extractKid($idToken);
+
+        $cached = $cache->get(self::JWKS_CACHE_KEY);
+        if (is_array($cached) && isset($cached['keys']) && is_array($cached['keys'])) {
+            // Serve from cache when the token's key id is present (or the kid is unreadable —
+            // verification will reject it anyway, no need to spend a network round trip first).
+            if ($kid === null || $this->findJwksKey($cached, $kid) !== null) {
+                return $cached;
+            }
+        }
+
+        // Cache miss, or a known key id that has rotated out of the cached set: fetch fresh and
+        // re-cache. Only a well-formed response reaches this point (fetchAppleJwks throws otherwise),
+        // so a failed/malformed response is never cached.
+        $fresh = $this->fetchAppleJwks();
+
+        try {
+            $cache->set(self::JWKS_CACHE_KEY, $fresh, self::JWKS_CACHE_TTL);
+        } catch (\Throwable) {
+            // Caching is best-effort; a write failure must not break verification.
+        }
+
+        return $fresh;
+    }
+
+    /**
+     * Resolve the framework cache store, degrading to null (direct fetch) if it is unavailable so
+     * caching can never break verification.
+     *
+     * @return CacheStore<mixed>|null
+     */
+    protected function resolveCache(): ?CacheStore
+    {
+        try {
+            $cache = $this->context->getContainer()->get(CacheStore::class);
+
+            return $cache instanceof CacheStore ? $cache : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Best-effort read of the `kid` from an ID token header, used to decide whether the cached JWKS
+     * can serve the token. Returns null when the header is unreadable — verification proper will
+     * surface the real error.
+     */
+    private function extractKid(string $idToken): ?string
+    {
+        $parts = explode('.', $idToken);
+        if ($parts[0] === '') {
+            return null;
+        }
+
+        try {
+            $header = json_decode($this->base64UrlDecode($parts[0]), true);
+        } catch (\Exception) {
+            return null;
+        }
+
+        $kid = is_array($header) ? ($header['kid'] ?? null) : null;
+
+        return is_string($kid) && $kid !== '' ? $kid : null;
+    }
+
+    /**
      * Fetch Apple's JSON Web Key Set.
      *
      * @return array<string, mixed>
      * @throws \Exception If the JWKS cannot be fetched or is malformed
      */
-    private function fetchAppleJwks(): array
+    protected function fetchAppleJwks(): array
     {
         $jwksUrl = 'https://appleid.apple.com/auth/keys';
 

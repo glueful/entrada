@@ -11,7 +11,6 @@ return [
     // General settings
     'enabled_providers' => ['google', 'facebook', 'github', 'apple'],
     'auto_register' => true,  // Automatically create user accounts for new social logins
-    'link_accounts' => true,  // Allow linking social accounts to existing users
     'sync_profile' => true,   // Sync profile data from social providers
     'post_registration' => [
         // Disabled by default; apps opt in explicitly.
@@ -96,6 +95,7 @@ return [
         'app_id' => env('FACEBOOK_APP_ID', ''),
         'app_secret' => env('FACEBOOK_APP_SECRET', ''),
         'redirect_uri' => env('FACEBOOK_REDIRECT_URI', ''),
+        'api_version' => env('FACEBOOK_API_VERSION', 'v21.0'), // Graph API version for dialog/token/me URLs
     ],
 
     // GitHub OAuth settings

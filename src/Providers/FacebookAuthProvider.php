@@ -31,6 +31,9 @@ class FacebookAuthProvider extends AbstractSocialProvider
     /** @var string Redirect URI for Facebook OAuth callback */
     private string $redirectUri;
 
+    /** @var string Graph API version used in dialog, token and /me URLs */
+    private string $apiVersion;
+
     /** @var array<int, string> OAuth scopes requested */
     private array $scopes = ['email', 'public_profile'];
 
@@ -82,6 +85,24 @@ class FacebookAuthProvider extends AbstractSocialProvider
         $this->redirectUri = !empty($config['facebook']['redirect_uri']) ?
                              $config['facebook']['redirect_uri'] :
                              (getenv('FACEBOOK_REDIRECT_URI') ?: $this->defaultCallbackUri());
+
+        $this->apiVersion = !empty($config['facebook']['api_version']) ?
+                            $config['facebook']['api_version'] :
+                            (getenv('FACEBOOK_API_VERSION') ?: 'v21.0');
+    }
+
+    /**
+     * Compute Facebook's appsecret_proof (HMAC-SHA256 of the access token, keyed by the app secret).
+     *
+     * Sent alongside Graph API requests so calls succeed when the app has "Require App Secret"
+     * enabled and so a stolen token cannot be replayed without the app secret.
+     *
+     * @param string $accessToken Access token to bind the proof to
+     * @return string Hex-encoded HMAC-SHA256 digest
+     */
+    private function appSecretProof(string $accessToken): string
+    {
+        return hash_hmac('sha256', $accessToken, $this->appSecret);
     }
 
     /**
@@ -190,7 +211,7 @@ class FacebookAuthProvider extends AbstractSocialProvider
         $codeChallenge = $this->startPkce();
 
         // Build authorization URL
-        $authUrl = 'https://www.facebook.com/v15.0/dialog/oauth';
+        $authUrl = "https://www.facebook.com/{$this->apiVersion}/dialog/oauth";
         $params = [
             'client_id' => $this->appId,
             'redirect_uri' => $this->redirectUri,
@@ -219,7 +240,7 @@ class FacebookAuthProvider extends AbstractSocialProvider
     private function exchangeCodeForToken(string $code): array
     {
         // Token endpoint
-        $tokenUrl = 'https://graph.facebook.com/v15.0/oauth/access_token';
+        $tokenUrl = "https://graph.facebook.com/{$this->apiVersion}/oauth/access_token";
 
         // Request parameters
         $params = [
@@ -235,14 +256,15 @@ class FacebookAuthProvider extends AbstractSocialProvider
             $params['code_verifier'] = $verifier;
         }
 
-        // Make request to token endpoint
+        // Make request to token endpoint. POST with a form body keeps the app secret and
+        // authorization code out of proxy/access/slow-request query-string logs.
         try {
-            $response = $this->httpClient->get($tokenUrl, [
+            $response = $this->httpClient->post($tokenUrl, [
                 'timeout' => 30,
                 'headers' => [
                     'Accept' => 'application/json'
                 ],
-                'query' => $params
+                'form_params' => $params
             ]);
 
             if (!$response->isSuccessful()) {
@@ -277,12 +299,21 @@ class FacebookAuthProvider extends AbstractSocialProvider
     {
         // Facebook Graph API endpoint
         $fields = 'id,name,email,first_name,last_name,picture.type(large),gender,birthday,location';
-        $userInfoUrl = "https://graph.facebook.com/v15.0/me?fields={$fields}&access_token={$accessToken}";
+
+        // appsecret_proof binds the call to our app secret: required when the app enables
+        // "Require App Secret" and prevents replay of a stolen token from another origin.
+        $params = [
+            'fields' => $fields,
+            'access_token' => $accessToken,
+            'appsecret_proof' => $this->appSecretProof($accessToken),
+        ];
+        $userInfoUrl = "https://graph.facebook.com/{$this->apiVersion}/me";
 
         // Make GET request
         try {
             $response = $this->httpClient->get($userInfoUrl, [
-                'timeout' => 30
+                'timeout' => 30,
+                'query' => $params
             ]);
 
             if (!$response->isSuccessful()) {

@@ -163,4 +163,53 @@ final class AppleIdTokenVerificationTest extends TestCase
         $claims = $this->verifier()->exposedVerify($token, $this->jwks, $this->aud, $this->iss);
         self::assertSame($this->aud, $claims['aud'][1]);
     }
+
+    public function test_profile_promotes_bool_true_email_verified_to_top_level(): void
+    {
+        $token = $this->makeToken(payloadOverride: ['email_verified' => true]);
+
+        $profile = $this->verifier()
+            ->withJwks($this->jwks, $this->aud, $this->iss)
+            ->exposedExtractUserProfile($token);
+
+        self::assertArrayHasKey('email_verified', $profile);
+        self::assertTrue($this->verifier()->exposedIsVerifiedFlagPublic($profile['email_verified']));
+    }
+
+    public function test_profile_promotes_string_true_email_verified_to_top_level(): void
+    {
+        // Apple commonly sends email_verified as the JSON string "true".
+        $token = $this->makeToken(payloadOverride: ['email_verified' => 'true']);
+
+        $profile = $this->verifier()
+            ->withJwks($this->jwks, $this->aud, $this->iss)
+            ->exposedExtractUserProfile($token);
+
+        self::assertSame('true', $profile['email_verified']);
+        self::assertTrue($this->verifier()->exposedIsVerifiedFlagPublic($profile['email_verified']));
+    }
+
+    public function test_profile_keeps_false_email_verified_unverified(): void
+    {
+        $token = $this->makeToken(payloadOverride: ['email_verified' => false]);
+
+        $profile = $this->verifier()
+            ->withJwks($this->jwks, $this->aud, $this->iss)
+            ->exposedExtractUserProfile($token);
+
+        self::assertFalse($this->verifier()->exposedIsVerifiedFlagPublic($profile['email_verified']));
+    }
+
+    public function test_profile_treats_absent_email_verified_as_unverified(): void
+    {
+        // Remove the default email_verified claim entirely.
+        $token = $this->makeToken(payloadOverride: ['email_verified' => null]);
+
+        $profile = $this->verifier()
+            ->withJwks($this->jwks, $this->aud, $this->iss)
+            ->exposedExtractUserProfile($token);
+
+        self::assertArrayHasKey('email_verified', $profile);
+        self::assertFalse($this->verifier()->exposedIsVerifiedFlagPublic($profile['email_verified']));
+    }
 }
