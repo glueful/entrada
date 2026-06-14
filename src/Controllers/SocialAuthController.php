@@ -11,6 +11,9 @@ use Glueful\Extensions\Entrada\Providers\FacebookAuthProvider;
 use Glueful\Extensions\Entrada\Providers\GithubAuthProvider;
 use Glueful\Extensions\Entrada\Providers\AppleAuthProvider;
 use Glueful\Extensions\Entrada\Providers\AbstractSocialProvider;
+use Glueful\Routing\Attributes\ApiOperation;
+use Glueful\Routing\Attributes\ApiResponse;
+use Glueful\Routing\Attributes\QueryParam;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -49,10 +52,14 @@ class SocialAuthController
     // =========================================================================
 
     /**
-     * Initiate Google OAuth flow
-     *
-     * @route GET /auth/social/google
+     * Initiate Google OAuth flow.
      */
+    #[ApiOperation(
+        summary: 'Google OAuth Authentication',
+        description: 'Initiates the OAuth flow with Google for user authentication.',
+        tags: ['Social Authentication'],
+    )]
+    #[ApiResponse(302, description: "Redirects to Google's OAuth authorization page")]
     public function googleInit(Request $request): Response
     {
         try {
@@ -69,10 +76,18 @@ class SocialAuthController
     }
 
     /**
-     * Google native token authentication
-     *
-     * @route POST /auth/social/google
+     * Google native token authentication.
      */
+    #[ApiOperation(
+        summary: 'Google Native Authentication',
+        description: 'Authenticates a user with a Google ID token from a native mobile app. '
+            . 'Body: `id_token` (required) — ID token obtained from Google Sign-In SDK.',
+        tags: ['Social Authentication'],
+    )]
+    #[ApiResponse(200, description: 'Successfully authenticated with Google')]
+    #[ApiResponse(400, description: 'Missing ID token')]
+    #[ApiResponse(401, description: 'Failed to verify Google ID token')]
+    #[ApiResponse(500, description: 'Server error during authentication')]
     public function googleNative(Request $request): Response
     {
         try {
@@ -100,10 +115,18 @@ class SocialAuthController
     }
 
     /**
-     * Google OAuth callback
-     *
-     * @route GET /auth/social/google/callback
+     * Google OAuth callback.
      */
+    #[ApiOperation(
+        summary: 'Google OAuth Callback',
+        description: 'Callback endpoint that processes the OAuth response from Google.',
+        tags: ['Social Authentication'],
+    )]
+    #[QueryParam('code', description: 'Authorization code from Google', required: true)]
+    #[QueryParam('state', description: 'State token for CSRF protection', required: true)]
+    #[ApiResponse(200, description: 'Successfully authenticated with Google')]
+    #[ApiResponse(400, description: 'Bad request or invalid parameters')]
+    #[ApiResponse(401, description: 'Authentication failed')]
     public function googleCallback(Request $request): Response
     {
         try {
@@ -128,10 +151,14 @@ class SocialAuthController
     // =========================================================================
 
     /**
-     * Initiate Facebook OAuth flow
-     *
-     * @route GET /auth/social/facebook
+     * Initiate Facebook OAuth flow.
      */
+    #[ApiOperation(
+        summary: 'Facebook OAuth Authentication',
+        description: 'Initiates the OAuth flow with Facebook for user authentication.',
+        tags: ['Social Authentication'],
+    )]
+    #[ApiResponse(302, description: "Redirects to Facebook's OAuth authorization page")]
     public function facebookInit(Request $request): Response
     {
         try {
@@ -148,10 +175,18 @@ class SocialAuthController
     }
 
     /**
-     * Facebook native token authentication
-     *
-     * @route POST /auth/social/facebook
+     * Facebook native token authentication.
      */
+    #[ApiOperation(
+        summary: 'Facebook Native Authentication',
+        description: 'Authenticates a user with a Facebook access token from a native mobile app. '
+            . 'Body: `access_token` (required) — access token obtained from Facebook Login SDK.',
+        tags: ['Social Authentication'],
+    )]
+    #[ApiResponse(200, description: 'Successfully authenticated with Facebook')]
+    #[ApiResponse(400, description: 'Missing access token')]
+    #[ApiResponse(401, description: 'Failed to verify Facebook access token')]
+    #[ApiResponse(500, description: 'Server error during authentication')]
     public function facebookNative(Request $request): Response
     {
         try {
@@ -182,10 +217,18 @@ class SocialAuthController
     }
 
     /**
-     * Facebook OAuth callback
-     *
-     * @route GET /auth/social/facebook/callback
+     * Facebook OAuth callback.
      */
+    #[ApiOperation(
+        summary: 'Facebook OAuth Callback',
+        description: 'Callback endpoint that processes the OAuth response from Facebook.',
+        tags: ['Social Authentication'],
+    )]
+    #[QueryParam('code', description: 'Authorization code from Facebook', required: true)]
+    #[QueryParam('state', description: 'State token for CSRF protection', required: true)]
+    #[ApiResponse(200, description: 'Successfully authenticated with Facebook')]
+    #[ApiResponse(400, description: 'Bad request or invalid parameters')]
+    #[ApiResponse(401, description: 'Authentication failed')]
     public function facebookCallback(Request $request): Response
     {
         try {
@@ -210,10 +253,14 @@ class SocialAuthController
     // =========================================================================
 
     /**
-     * Initiate GitHub OAuth flow
-     *
-     * @route GET /auth/social/github
+     * Initiate GitHub OAuth flow.
      */
+    #[ApiOperation(
+        summary: 'GitHub OAuth Authentication',
+        description: 'Initiates the OAuth flow with GitHub for user authentication.',
+        tags: ['Social Authentication'],
+    )]
+    #[ApiResponse(302, description: "Redirects to GitHub's OAuth authorization page")]
     public function githubInit(Request $request): Response
     {
         try {
@@ -230,10 +277,18 @@ class SocialAuthController
     }
 
     /**
-     * GitHub native token authentication
-     *
-     * @route POST /auth/social/github
+     * GitHub native token authentication.
      */
+    #[ApiOperation(
+        summary: 'GitHub Native Authentication',
+        description: 'Authenticates a user with a GitHub access token from a native mobile app. '
+            . 'Body: `access_token` (required) — access token obtained from GitHub OAuth.',
+        tags: ['Social Authentication'],
+    )]
+    #[ApiResponse(200, description: 'Successfully authenticated with GitHub')]
+    #[ApiResponse(400, description: 'Missing access token')]
+    #[ApiResponse(401, description: 'Failed to verify GitHub access token')]
+    #[ApiResponse(500, description: 'Server error during authentication')]
     public function githubNative(Request $request): Response
     {
         try {
@@ -261,10 +316,18 @@ class SocialAuthController
     }
 
     /**
-     * GitHub OAuth callback
-     *
-     * @route GET /auth/social/github/callback
+     * GitHub OAuth callback.
      */
+    #[ApiOperation(
+        summary: 'GitHub OAuth Callback',
+        description: 'Callback endpoint that processes the OAuth response from GitHub.',
+        tags: ['Social Authentication'],
+    )]
+    #[QueryParam('code', description: 'Authorization code from GitHub', required: true)]
+    #[QueryParam('state', description: 'State token for CSRF protection', required: true)]
+    #[ApiResponse(200, description: 'Successfully authenticated with GitHub')]
+    #[ApiResponse(400, description: 'Bad request or invalid parameters')]
+    #[ApiResponse(401, description: 'Authentication failed')]
     public function githubCallback(Request $request): Response
     {
         try {
@@ -289,10 +352,14 @@ class SocialAuthController
     // =========================================================================
 
     /**
-     * Initiate Apple OAuth flow
-     *
-     * @route GET /auth/social/apple
+     * Initiate Apple OAuth flow.
      */
+    #[ApiOperation(
+        summary: 'Apple OAuth Authentication',
+        description: 'Initiates the OAuth flow with Apple for user authentication.',
+        tags: ['Social Authentication'],
+    )]
+    #[ApiResponse(302, description: "Redirects to Apple's OAuth authorization page")]
     public function appleInit(Request $request): Response
     {
         try {
@@ -309,10 +376,20 @@ class SocialAuthController
     }
 
     /**
-     * Apple native token authentication
-     *
-     * @route POST /auth/social/apple
+     * Apple native token authentication.
      */
+    #[ApiOperation(
+        summary: 'Apple Native Authentication',
+        description: 'Authenticates a user with an Apple ID token from a native mobile app. '
+            . 'Body: `id_token` (required) — ID token obtained from Sign in with Apple SDK; '
+            . '`nonce` — optional raw nonce the client bound to its Sign in with Apple request, '
+            . "when supplied the token's nonce claim must match sha256(nonce) (replay protection).",
+        tags: ['Social Authentication'],
+    )]
+    #[ApiResponse(200, description: 'Successfully authenticated with Apple')]
+    #[ApiResponse(400, description: 'Missing ID token')]
+    #[ApiResponse(401, description: 'Failed to verify Apple ID token')]
+    #[ApiResponse(500, description: 'Server error during authentication')]
     public function appleNative(Request $request): Response
     {
         try {
@@ -345,10 +422,19 @@ class SocialAuthController
     }
 
     /**
-     * Apple OAuth callback
-     *
-     * @route POST /auth/social/apple/callback
+     * Apple OAuth callback.
      */
+    #[ApiOperation(
+        summary: 'Apple OAuth Callback',
+        description: 'Callback endpoint that processes the OAuth response from Apple. '
+            . 'Body: `code` (required) — authorization code from Apple; `state` (required) — '
+            . 'state token for CSRF protection; `user` — JSON string containing user information '
+            . '(only provided on first login).',
+        tags: ['Social Authentication'],
+    )]
+    #[ApiResponse(200, description: 'Successfully authenticated with Apple')]
+    #[ApiResponse(400, description: 'Bad request or invalid parameters')]
+    #[ApiResponse(401, description: 'Authentication failed')]
     public function appleCallback(Request $request): Response
     {
         try {
