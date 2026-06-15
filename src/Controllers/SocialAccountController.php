@@ -6,6 +6,8 @@ namespace Glueful\Extensions\Entrada\Controllers;
 
 use Glueful\Http\Response;
 use Glueful\Database\Connection;
+use Glueful\Routing\Attributes\ApiOperation;
+use Glueful\Routing\Attributes\ApiResponse;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -25,10 +27,16 @@ class SocialAccountController
     }
 
     /**
-     * Get connected social accounts for authenticated user
-     *
-     * @route GET /user/social-accounts
+     * Get connected social accounts for authenticated user.
      */
+    #[ApiOperation(
+        summary: 'Get Connected Social Accounts',
+        description: 'Retrieve all social accounts connected to the authenticated user.',
+        tags: ['Social Account Management'],
+    )]
+    #[ApiResponse(200, description: 'Successfully retrieved social accounts')]
+    #[ApiResponse(401, description: 'Unauthorized - User is not authenticated')]
+    #[ApiResponse(500, description: 'Server error retrieving social accounts')]
     public function index(Request $request): Response
     {
         try {
@@ -53,10 +61,17 @@ class SocialAccountController
     }
 
     /**
-     * Unlink a social account
-     *
-     * @route DELETE /user/social-accounts/{uuid}
+     * Unlink a social account.
      */
+    #[ApiOperation(
+        summary: 'Unlink Social Account',
+        description: 'Remove a social provider connection from the authenticated user.',
+        tags: ['Social Account Management'],
+    )]
+    #[ApiResponse(200, description: 'Successfully unlinked social account')]
+    #[ApiResponse(401, description: 'Unauthorized - User is not authenticated')]
+    #[ApiResponse(404, description: 'Social account not found or not owned by user')]
+    #[ApiResponse(500, description: 'Server error unlinking social account')]
     public function destroy(Request $request, string $uuid): Response
     {
         try {
