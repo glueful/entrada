@@ -6,7 +6,6 @@ namespace Glueful\Extensions\Entrada\Services;
 
 use Glueful\Bootstrap\ApplicationContext;
 use Glueful\Extensions\ServiceProvider;
-use Glueful\Database\Migrations\MigrationPriority;
 use Glueful\Extensions\Entrada\Providers\GoogleAuthProvider;
 use Glueful\Extensions\Entrada\Providers\FacebookAuthProvider;
 use Glueful\Extensions\Entrada\Providers\GithubAuthProvider;
@@ -109,11 +108,8 @@ class EntradaServiceProvider extends ServiceProvider
             error_log('Entrada: Auth initialization error: ' . $e->getMessage());
         }
 
-        // Load routes and migrations. social_accounts holds a (now FK-less) logical reference to
-        // users.uuid — owned by glueful/users at IDENTITY — so entrada migrates at DEPENDENT
-        // (after identity + app) and records its source as glueful/entrada.
+        // Load routes.
         $this->loadRoutesFrom(__DIR__ . '/../routes.php');
-        $this->loadMigrationsFrom(dirname(__DIR__, 2) . '/migrations', MigrationPriority::DEPENDENT, 'glueful/entrada');
 
         // Register extension metadata for CLI and diagnostics
         try {
